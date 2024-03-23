@@ -8,3 +8,31 @@ class Registration(StatesGroup):
     Location = State()
     ConfirmLocation = State()
     Bio = State()
+
+class ChangeUser(StatesGroup):
+    Bio = State()
+    Age = State()
+    Location = State()
+    Final = State()
+
+class MakeTravel(StatesGroup):
+    Name= State()
+    Points=State()
+    MorePoints= State()
+    Okey_city=State()
+    StartDate=State()
+    EndDate=State()
+
+class EditTravel(StatesGroup):
+    EditName = State()
+    EditDescription = State()
+
+class AddPoints(StatesGroup):
+    EnterPoint=State()
+    ConfirmPoint=State()
+    EnterStartDate=State()
+    EnterEndDate=State()
+
+class AddUserToTrip(StatesGroup):
+    Username = State()
+    ChooseTrip=State()
