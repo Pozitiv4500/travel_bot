@@ -45,6 +45,17 @@ async def db_start():
                     user_id BIGINT REFERENCES Users(user_id)
                     );
                 """)
+    await conn.execute("""
+                       CREATE TABLE IF NOT EXISTS TripNotes (
+                        note_id SERIAL PRIMARY KEY,
+                        trip_id INTEGER REFERENCES Trips(trip_id),
+                        user_id INTEGER REFERENCES users(user_id),
+                        message_type VARCHAR(50),  
+                        File_id TEXT,
+                        note_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        is_private BOOLEAN
+                    );
+                   """)
 
 
 async def create_profile(user_id, age, home_name, latitude, longitude, bio, username):
@@ -165,6 +176,14 @@ async def get_user_trips_with_locations(user_id):
         print(f"Ошибка при получении путешествий пользователя: {e}")
         return []
 
+async def get_invited_users(trip_id):
+    try:
+        query = "SELECT user_id FROM TripParticipants WHERE trip_id = $1"
+        invited_users = await conn.fetch(query, int(trip_id))
+        return [user['user_id'] for user in invited_users]
+    except Exception as e:
+        print(f"Error fetching invited users for trip {trip_id}: {e}")
+        return []
 
 async def check_trip_existence(trip_name):
     query = """
@@ -259,53 +278,69 @@ async def delete_trip_point_by_id(point_id):
         # В случае ошибки при удалении точки маршрута выводим сообщение в консоль
         print(f"Error deleting trip point: {e}")
         raise e
+
+
 async def delete_trip_by_id(trip_id):
     try:
-        # Удаляем все локации, связанные с данной поездкой
+        # Удаляем все записи из таблицы TripParticipants, связанные с данной поездкой
+        await conn.execute("DELETE FROM TripParticipants WHERE trip_id = $1", int(trip_id))
+
+        # Затем удаляем все локации, связанные с данной поездкой
         await conn.execute("DELETE FROM Locations WHERE trip_id = $1", int(trip_id))
+
+        # Затем удаляем все заметки, связанные с данной поездкой
+        await conn.execute("DELETE FROM TripNotes WHERE trip_id = $1", int(trip_id))
+
         # Затем удаляем саму поездку
         await conn.execute("DELETE FROM Trips WHERE trip_id = $1", int(trip_id))
+
+        print(f"Поездка с id {trip_id} успешно удалена.")
     except Exception as e:
-        print(f"Error deleting trip: {e}")
+        print(f"Ошибка при удалении поездки: {e}")
         raise e
 
 async def add_friend_to_trip(username, trip_id):
-
+    try:
         # Проверяем существует ли пользователь с указанным никнеймом
         query = "SELECT user_id FROM users WHERE username = $1"
         user_id = await conn.fetchval(query, username.replace("@", ""))
         if not user_id:
-            return False, 1  # Код ошибки 1: Пользователь с указанным никнеймом не найден
-        user_id=int(user_id)
-        trip_id=int(trip_id)
+            return False, 1, None  # Код ошибки 1: Пользователь с указанным никнеймом не найден
+
+        user_id = int(user_id)
+        trip_id = int(trip_id)
+
         # Проверяем, является ли пользователь участником путешествия
         query = "SELECT EXISTS(SELECT 1 FROM TripParticipants WHERE user_id = $1 AND trip_id = $2)"
         is_member = await conn.fetchval(query, user_id, trip_id)
         if is_member:
-            return True, 2  # Код ошибки 2: Пользователь уже является участником путешествия
+            return False, 2, None  # Код ошибки 2: Пользователь уже является участником путешествия
 
         # Проверяем, является ли пользователь создателем путешествия
         query = "SELECT EXISTS(SELECT 1 FROM trips WHERE user_id = $1 AND trip_id = $2)"
         is_creator = await conn.fetchval(query, user_id, trip_id)
         if is_creator:
-            return False, 3  # Код ошибки 3: Пользователь является создателем путешествия
+            return False, 3, None  # Код ошибки 3: Пользователь является создателем путешествия
 
         # Добавляем пользователя в участники путешествия
-        query = "INSERT INTO TripParticipants (user_id, trip_id) VALUES ($1, $2)"
-        await conn.execute(query, user_id, trip_id)
+        query = "INSERT INTO TripParticipants (user_id, trip_id) VALUES ($1, $2) RETURNING user_id"
+        new_user_id = await conn.fetchval(query, user_id, trip_id)
 
-        return True, 0  # Успешное добавление пользователя в путешествие
+        return True, 0, new_user_id  # Успешное добавление пользователя в путешествие
+    except Exception as e:
+        print(f"Error adding friend to trip: {e}")
+        return False, 4, None  # Код ошибки 4: Произошла ошибка при добавлении пользователя в путешествие
 
 async def get_friends_trips_names(user_id):
     try:
         query = """
-                SELECT trips.trip_name
+                SELECT trips.trip_id, trips.trip_name
                 FROM trips
                 INNER JOIN TripParticipants ON trips.trip_id = TripParticipants.trip_id
                 WHERE TripParticipants.user_id = $1
                 """
-        trip_names = await conn.fetch(query, user_id)
-        return [trip['trip_name'] for trip in trip_names]
+        trip_data = await conn.fetch(query, user_id)
+        return [{'trip_id': trip['trip_id'], 'trip_name': trip['trip_name']} for trip in trip_data]
     except Exception as e:
         print(f"Ошибка при получении названий путешествий друзей для пользователя {user_id}: {e}")
         return []
@@ -323,4 +358,29 @@ async def get_joined_trips_info(user_id):
         return trips_data
     except Exception as e:
         print(f"Ошибка при получении путешествий пользователя: {e}")
+        return []
+
+async def save_trip_note_to_db(trip_id, user_id, message_type, file_id=None, note_privacy=False):
+    try:
+        query = """
+                INSERT INTO TripNotes (trip_id, user_id, message_type, file_id, note_date, is_private)
+                VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, $5)
+                """
+        await conn.execute(query, trip_id, user_id, message_type, file_id, note_privacy)
+        return True  # Успешное сохранение заметки
+    except Exception as e:
+        print(f"Ошибка при сохранении заметки: {e}")
+        return False  # Ошибка при сохранении заметки
+
+async def get_trip_notes(trip_id):
+    try:
+        query = """
+                SELECT message_type, file_id, is_private, user_id
+                FROM TripNotes
+                WHERE trip_id = $1
+                """
+        trip_notes = await conn.fetch(query, trip_id)
+        return trip_notes
+    except Exception as e:
+        print(f"Ошибка при получении заметок о путешествии: {e}")
         return []

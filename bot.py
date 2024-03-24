@@ -1,25 +1,27 @@
 import logging
+import os
 from datetime import datetime
-
+import osmnx as ox
 from aiogram import Bot, Dispatcher, executor, types
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
-from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ContentType
 from geopy import Location
-
+import matplotlib.pyplot as plt
 from keyboards import Location_keyboard, MainMenu, manage_travel_menu, change, right_city, right_city_2, \
-    back_to_menu_travels_keyboard, right_city_3, right_city_reg
+    back_to_menu_travels_keyboard, right_city_3, right_city_reg, SecondPageMenu
 from geopy.geocoders import Nominatim
 
 
 from config import BOT_TOKEN
-from messages import welcome_message
+from messages import welcome_message, SecondPageWelcomeMessage
 from models import db_start, create_profile, check_user_exists, edit_profile, create_trip_db, create_location, \
     check_trip_existence, get_user_trips_with_locations, format_trip_message, get_user_data, edit_trip_mod, \
     add_trip_point, get_user_trip_names, get_trip_points, delete_trip_point_by_id, delete_trip_by_id, \
-    add_friend_to_trip, get_joined_trips_info, get_friends_trips_names, get_user_trip_names_format
+    add_friend_to_trip, get_joined_trips_info, get_friends_trips_names, get_user_trip_names_format, get_invited_users, \
+    save_trip_note_to_db, get_trip_notes
 
-from statesform import Registration, ChangeUser, MakeTravel, EditTravel, AddPoints, AddUserToTrip
+from statesform import Registration, ChangeUser, MakeTravel, EditTravel, AddPoints, AddUserToTrip, NoteCreation
 
 # Устанавливаем уровень логирования
 logging.basicConfig(level=logging.INFO)
@@ -175,6 +177,22 @@ async def callback_show_menu(callback_query: types.CallbackQuery):
 
 
     await callback_query.message.edit_text(welcome_message, reply_markup=MainMenu)
+
+
+async def send_menu_page(message: types.Message, page_number: int):
+    if page_number == 1:
+        await message.edit_text(welcome_message, reply_markup=MainMenu)
+    elif page_number == 2:
+        await message.edit_text(SecondPageWelcomeMessage, reply_markup=SecondPageMenu)
+
+# Обработчик для перехода на следующую страницу
+@dp.callback_query_handler(lambda callback_query: callback_query.data == 'next_page')
+async def next_page(callback_query: types.CallbackQuery):
+    await send_menu_page(callback_query.message, 2)
+
+@dp.callback_query_handler(lambda callback_query: callback_query.data == 'previous_page')
+async def previous_page(callback_query: types.CallbackQuery):
+    await send_menu_page(callback_query.message, 1)
 
 #редактирование профиля ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -550,7 +568,7 @@ async def edit_trip(callback_query: types.CallbackQuery):
         return
 
     _, trip_id = callback_data_parts
-    print(trip_id)
+
     # Далее ваша логика обработки идентификатора путешествия
 
     # Создаем клавиатуру с кнопками для редактирования путешествия
@@ -821,7 +839,224 @@ async def list_trips(callback_query: types.CallbackQuery):
 # Обработчик для кнопки "Заметки к путешествию"--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 @dp.callback_query_handler(lambda callback_query: callback_query.data == 'travel_notes')
 async def travel_notes(callback_query: types.CallbackQuery):
-    await callback_query.message.edit_text("Вы выбрали заметки к путешествию.")
+    message_text = (
+        "📝 **Выберите действие:**\n\n"
+        "➕ **Создать новую заметку**\n"
+        "📖 **Просмотреть заметки**"
+    )
+
+    keyboard_markup = types.InlineKeyboardMarkup(row_width=2)
+    create_note_button = types.InlineKeyboardButton("➕ Создать", callback_data="create_note")
+    view_notes_button = types.InlineKeyboardButton("📖 Просмотреть", callback_data="view_notes")
+    back_button = types.InlineKeyboardButton("⬅️ Назад", callback_data="show_menu")
+    keyboard_markup.add(create_note_button, view_notes_button, back_button)
+
+    await callback_query.message.edit_text(message_text, reply_markup=keyboard_markup,
+                                           parse_mode=types.ParseMode.MARKDOWN)
+
+
+async def   travel_notes_mess(mess):
+    message_text = (
+        "📝 **Выберите действие:**\n\n"
+        "➕ **Создать новую заметку**\n"
+        "📖 **Просмотреть заметки**"
+    )
+
+    keyboard_markup = types.InlineKeyboardMarkup(row_width=2)
+    create_note_button = types.InlineKeyboardButton("➕ Создать", callback_data="create_note")
+    view_notes_button = types.InlineKeyboardButton("📖 Просмотреть", callback_data="view_notes")
+    back_button = types.InlineKeyboardButton("⬅️ Назад", callback_data="show_menu")
+    keyboard_markup.add(create_note_button, view_notes_button, back_button)
+
+    await mess.answer(message_text, reply_markup=keyboard_markup,
+                                           parse_mode=types.ParseMode.MARKDOWN)
+
+@dp.callback_query_handler(lambda callback_query: callback_query.data == 'create_note')
+async def start_note_creation(callback_query: types.CallbackQuery):
+    keyboard_markup = types.InlineKeyboardMarkup(row_width=2)
+    own_travel_button = types.InlineKeyboardButton("Своё путешествие", callback_data="own_travel")
+    friends_travel_button = types.InlineKeyboardButton("Путешествие друзей", callback_data="friends_travel")
+    back_button = types.InlineKeyboardButton("⬅️ Назад", callback_data="travel_notes")
+    keyboard_markup.add(own_travel_button, friends_travel_button, back_button)
+
+
+    await callback_query.message.edit_text(
+        "Выберите тип путешествия:",
+        reply_markup=keyboard_markup
+    )
+
+
+@dp.callback_query_handler(
+    lambda callback_query: callback_query.data == 'own_travel' or callback_query.data == 'friends_travel')
+async def choose_travel_type(callback_query: types.CallbackQuery, state: FSMContext):
+    back_button = types.InlineKeyboardButton("⬅️ Назад", callback_data="create_note")
+    user_id = callback_query.from_user.id
+    if callback_query.data == 'own_travel':
+        trips_data_mes = await get_user_trips_with_locations(user_id)
+        trip_data = await get_user_trip_names_format(user_id)
+    elif callback_query.data == 'friends_travel':
+        trips_data_mes= await get_joined_trips_info(user_id)
+        trip_data = await get_friends_trips_names(user_id)
+    keyboard_markup = types.InlineKeyboardMarkup()
+    keyboard_markup.add(back_button)
+    if not trip_data:
+        await callback_query.message.edit_text("Пока тут нет путешествий. Выберите другой тип путешествия или создайте новое.",reply_markup=keyboard_markup)
+        return
+
+    keyboard_markup = types.InlineKeyboardMarkup()
+
+    for trip in trip_data:
+        button = types.InlineKeyboardButton(trip['trip_name'], callback_data=f"select_trip_{trip['trip_id']}")
+        keyboard_markup.add(button)
+
+    mess= await format_trip_message(trips_data_mes)
+    back_button = types.InlineKeyboardButton("⬅️ Назад", callback_data="create_note")
+    keyboard_markup.add(back_button)
+    await state.update_data(trip_data=trip_data)  # Сохраняем информацию о путешествиях в состоянии FSM
+
+    await callback_query.message.edit_text(f"<b>Выберите одно из путешествий:</b>\n\n{mess}", reply_markup=keyboard_markup, parse_mode='HTML')
+
+
+@dp.callback_query_handler(lambda callback_query: callback_query.data.startswith('select_trip_'))
+async def choose_trip(callback_query: types.CallbackQuery, state: FSMContext):
+    # Дополнительная логика выбора путешествия
+    await state.update_data(trip_id=int(callback_query.data.split('_')[-1]))
+
+    # Предложим выбрать тип заметки (общая или приватная)
+    instruction_text = "Выберите тип заметки:"
+    keyboard_markup = types.InlineKeyboardMarkup()
+    public_button = types.InlineKeyboardButton("Общая 🌍", callback_data="note_public")
+    private_button = types.InlineKeyboardButton("Приватная 🔒", callback_data="note_private")
+    keyboard_markup.row(public_button, private_button)
+
+    await callback_query.message.edit_text(instruction_text, reply_markup=keyboard_markup)
+
+
+
+@dp.callback_query_handler(lambda callback_query: callback_query.data == 'note_public' or callback_query.data == 'note_private')
+async def choose_note_privacy(callback_query: types.CallbackQuery, state: FSMContext):
+    note_privacy = callback_query.data == 'note_private'
+
+    # Получаем данные о путешествии и типе заметки
+    state_data = await state.get_data()
+    trip_id = state_data['trip_id']
+
+    # Сохраняем данные о приватности заметки
+    await state.update_data(note_privacy=note_privacy)
+
+    # Отправляем инструкцию по вводу заметки
+    instruction_text = (
+        "Теперь отправьте текстовое сообщение, фотографию или файл для вашей заметки. "
+        "Просто отправьте нужный то, что хотите сохранить, и я запомню его для вашего путешествия. 😊📝📷📎"
+    )
+    await callback_query.message.edit_text(instruction_text)
+    await state.set_state(NoteCreation.EnterNote)
+
+
+@dp.message_handler(state=NoteCreation.EnterNote, content_types=[ContentType.PHOTO, ContentType.TEXT, ContentType.DOCUMENT])
+async def save_trip_note(message: types.Message, state: FSMContext):
+    # Получаем данные из состояния
+    state_data = await state.get_data()
+    trip_id = state_data['trip_id']
+    user_id = message.from_user.id
+    note_privacy = state_data.get('note_privacy', False)  # По умолчанию заметка общедоступная
+
+    # Сохраняем заметку в базе данных
+    message_type = message.content_type
+    file_id = None
+
+    if message_type in ['photo', 'document']:
+        file_id = message.document.file_id if message_type == 'document' else message.photo[-1].file_id
+    elif message_type == 'text':
+        file_id = message.text
+
+    await save_trip_note_to_db(trip_id, user_id, message_type, file_id=file_id, note_privacy=note_privacy)
+    await message.reply("Заметка успешно сохранена!")
+
+    await state.finish()  # Завершаем состояние FSM
+    await travel_notes_mess(message)
+
+#просмотр заметок------------------------------------------------------------------------
+
+@dp.callback_query_handler(
+    lambda callback_query: callback_query.data == 'view_notes')
+async def view_notes(callback_query: types.CallbackQuery, state: FSMContext):
+    back_button = types.InlineKeyboardButton("⬅️ Назад", callback_data="travel_notes")
+    user_id = callback_query.from_user.id
+    keyboard_markup = types.InlineKeyboardMarkup()
+
+
+    # Выбор между своими и путешествиями друзей
+    choose_type_message = "Выберите тип путешествий для просмотра заметок:"
+    own_travel_button = types.InlineKeyboardButton("👤 Мои путешествия", callback_data="view_own_travel_notes")
+    friends_travel_button = types.InlineKeyboardButton("👥 Путешествия друзей",
+                                                       callback_data="view_friends_travel_notes")
+    keyboard_markup.row(own_travel_button, friends_travel_button)
+
+    keyboard_markup.add(back_button)
+    await callback_query.message.edit_text(choose_type_message, reply_markup=keyboard_markup)
+
+
+@dp.callback_query_handler(
+    lambda callback_query: callback_query.data in ['view_own_travel_notes', 'view_friends_travel_notes'])
+async def choose_notes_travel_type(callback_query: types.CallbackQuery, state: FSMContext):
+    back_button = types.InlineKeyboardButton("⬅️ Назад", callback_data="view_notes")
+    user_id = callback_query.from_user.id
+    keyboard_markup = types.InlineKeyboardMarkup()
+
+    keyboard_markup.add(back_button)
+    if callback_query.data == 'view_own_travel_notes':
+        trip_data = await get_user_trip_names_format(user_id)
+    elif callback_query.data == 'view_friends_travel_notes':
+        trip_data = await get_friends_trips_names(user_id)
+
+    if not trip_data:
+        await callback_query.message.edit_text(
+            "У вас нет путешествий. Выберите другой тип путешествия или создайте новое.", reply_markup=keyboard_markup)
+        return
+    keyboard_markup = types.InlineKeyboardMarkup()
+    choose_trip_message = "Выберите путешествие для просмотра заметок:"
+    for trip in trip_data:
+        button = types.InlineKeyboardButton(trip['trip_name'], callback_data=f"view_trip_notes_{trip['trip_id']}")
+        keyboard_markup.add(button)
+
+    await state.update_data(trip_data=trip_data)  # Сохраняем информацию о путешествиях в состоянии FSM
+
+    keyboard_markup.add(back_button)
+    await callback_query.message.edit_text(choose_trip_message, reply_markup=keyboard_markup)
+
+
+@dp.callback_query_handler(lambda callback_query: callback_query.data.startswith('view_trip_notes_'))
+async def view_trip_notes(callback_query: types.CallbackQuery, state: FSMContext):
+    trip_id = int(callback_query.data.split('_')[-1])
+
+    # Получаем заметки к выбранному путешествию
+    trip_notes = await get_trip_notes(trip_id)
+
+    if not trip_notes:
+        await callback_query.message.edit_text("У выбранного путешествия пока нет заметок.")
+        await travel_notes_mess(callback_query.message)
+        return
+
+    # Фильтруем заметки: показываем только те, которые принадлежат текущему пользователю или общедоступные
+    user_id = callback_query.from_user.id
+    filtered_notes = [note for note in trip_notes if note['user_id'] == user_id or not note['is_private']]
+
+    if not filtered_notes:
+        await callback_query.message.edit_text("У выбранного путешествия пока нет заметок :(")
+        await travel_notes_mess(callback_query.message)
+        return
+
+    for note in filtered_notes:
+        if note['message_type'] == 'photo':
+            await bot.send_photo(callback_query.from_user.id, note['file_id'])
+        elif note['message_type'] == 'document':
+            await bot.send_document(callback_query.from_user.id, note['file_id'])
+        else:
+            await callback_query.message.answer(note['file_id'])
+
+    await state.finish()  # Завершаем состояние FSM
+    await travel_notes_mess(callback_query.message)
 
 # Обработчик для кнопки "Путешествия с друзьями"---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 @dp.callback_query_handler(lambda callback_query: callback_query.data == 'travel_with_friends')
@@ -886,10 +1121,14 @@ async def add_user_to_trip(callback_query: types.CallbackQuery, state: FSMContex
 
     trips_data = await get_user_trips_with_locations(user_id)
 
+    back_button = types.InlineKeyboardButton("Назад ↩️", callback_data="travel_with_friends")
+
+    keyboard_markup = types.InlineKeyboardMarkup(row_width=1)
+    keyboard_markup.add(back_button)
     # Если у пользователя нет путешествий, сообщаем ему об этом
     if not trips_data:
         await callback_query.message.edit_text("У вас нет созданных путешествий. "
-                                               "Сначала создайте путешествие, а затем добавьте в него других пользователей.")
+                                               "Сначала создайте путешествие, а затем добавьте в него других пользователей.",reply_markup=keyboard_markup)
         return
 
     # Создаем список кнопок для выбора путешествия
@@ -944,9 +1183,11 @@ async def process_username(message: types.Message, state: FSMContext):
                             "в формате: @username.")
         return
 
+    # Получаем идентификатор путешествия из состояния
+    trip_id = (await state.get_data()).get('trip_id')
+
     # Проверяем существование пользователя и добавляем его в участники путешествия
-    trip_id = (await state.get_data()).get('trip_id')  # Получаем идентификатор путешествия из состояния
-    success, error_code = await add_friend_to_trip(username, trip_id)
+    success, error_code, new_user_id = await add_friend_to_trip(username, trip_id)
     if not success:
         error_messages = {
             1: "К сожалению, я не смог найти пользователя с указанным никнеймом. Убедитесь, что ваш друг зарегистрирован в нашем боте. 🤖",
@@ -958,12 +1199,26 @@ async def process_username(message: types.Message, state: FSMContext):
         await state.finish()  # Завершаем состояние FSM
         await travel_with_friends_mes(message)
         return
+
+    # Оповещаем всех участников о добавлении нового пользователя
+    trip_members = await get_invited_users(trip_id)
+
+    trip_members=trip_members.remove(new_user_id)
+
+
+    if trip_members:
+        for member_id in trip_members:
+            try:
+                await dp.bot.send_message(member_id, f"Новый участник {username} был добавлен в наше путешествие! 🎉")
+            except Exception as e:
+                print(f"Error sending notification to user {member_id}: {e}")
+
+    await dp.bot.send_message(new_user_id, f"Вы добавлены в участники путешествия! 🎉")
     # Пользователь успешно добавлен в участники путешествия
     await message.reply(f"Пользователь {username} успешно добавлен в участники путешествия! 🎉")
     await state.finish()  # Завершаем состояние FSM
     await travel_with_friends_mes(message)
 
- # types.InlineKeyboardButton("Просмотреть все путешествия, в которые вы добавлены 🔍", callback_data="view_all_trips")
 
 
 # Обработчик для кнопки "Прокладывание маршрута путешествия"---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -980,6 +1235,20 @@ async def plan_travel_route(callback_query: types.CallbackQuery):
 
     # Отправляем текстовое сообщение
     await callback_query.message.edit_text("🌟 Выберите, что вы хотите сделать:", reply_markup=keyboard_markup)
+
+
+async def plan_travel_route_mess(mess):
+    # Создаем кнопки для прокладывания маршрутов
+    travel_route_button = types.InlineKeyboardButton("Прокладывание маршрута путешествия 🗺️", callback_data="travel_route")
+    start_route_button = types.InlineKeyboardButton("Построить маршрут до начальной точки путешествия 🏃‍♂️", callback_data="start_route")
+    back = types.InlineKeyboardButton("Назад ↩️", callback_data="show_menu")
+
+    # Создаем клавиатуру с кнопками
+    keyboard_markup = types.InlineKeyboardMarkup(row_width=1)
+    keyboard_markup.add(travel_route_button, start_route_button,back)
+
+    # Отправляем текстовое сообщение
+    await mess.answer("🌟 Выберите, что вы хотите сделать:", reply_markup=keyboard_markup)
 
 
 # Обработчик для кнопки "Прокладывание маршрута путешествия"
@@ -1017,14 +1286,54 @@ async def select_trip_type(callback_query: types.CallbackQuery):
     # Создаем клавиатуру с кнопками для выбора путешествия
     keyboard_markup = InlineKeyboardMarkup(row_width=1)
     for trip in trips:
-        keyboard_markup.add(InlineKeyboardButton(trip['trip_name'], callback_data=f"select_trip_{trip['trip_id']}"))
+        keyboard_markup.add(InlineKeyboardButton(trip['trip_name'], callback_data=f"select_trip_route_{trip['trip_id']}"))
     keyboard_markup.add(InlineKeyboardButton("Назад ↩️", callback_data="travel_route"))
 
     await callback_query.message.edit_text(message_text, reply_markup=keyboard_markup)
 
+@dp.callback_query_handler(lambda callback_query: callback_query.data.startswith('select_trip_route_'))
+async def build_trip_route(callback_query: types.CallbackQuery):
+    # Получаем идентификатор путешествия из данных коллбэка
+    trip_id = int(callback_query.data.split('_')[-1])
+
+    # Получаем точки маршрута путешествия
+    trip_points = await get_trip_points(trip_id)
+
+    if not trip_points:
+        await callback_query.message.answer("Точки маршрута для выбранного путешествия не найдены.")
+        await plan_travel_route_mess(callback_query.message)
+        return
+
+    # Если в путешествии всего одна точка, возвращаем пользователя в изначальное меню
+    # if len(trip_points) == 1:
+    #     await callback_query.message.answer(
+    #         "Ой, в вашем путешествии всего одна точка маршрута! Добавьте еще несколько точек, чтобы проложить маршрут 😊🌍")
+    #     await plan_travel_route_mess(callback_query.message)
+    #     return
+
+    # Создаем список названий местоположений
+    location_names = [point['location_name'] for point in trip_points]
+
+    # Строим маршрут по точкам
+    G = ox.graph_from_place(location_names[0], network_type='walk')
+    for i in range(1, len(location_names)):
+        origin = location_names[i - 1]
+        destination = location_names[i]
+        route = ox.shortest_path(G, origin, destination)
+        ox.plot_graph_route(G, route, route_linewidth=6, node_size=0, bgcolor='k', route_color='r')
+
+    # Сохраняем изображение маршрута
+    plt.savefig('trip_route.png')
+
+    # Отправляем изображение пользователю
+    with open('trip_route.png', 'rb') as photo:
+        await callback_query.message.answer_photo(photo, caption="Маршрут путешествия")
+
+    # Удаляем временный файл
+    os.remove('trip_route.png')
 
 
-# Обработчик для кнопки "Построить маршрут до начальной точки путешествия"
+# Обработчик для кнопки "Построить маршрут до начальной точки путешествия"--------------------------------------------------------------------------------------------------------------------------------------------
 @dp.callback_query_handler(lambda callback_query: callback_query.data == 'start_route')
 async def start_route(callback_query: types.CallbackQuery):
     # Создаем клавиатуру с кнопками для выбора путешествий пользователя или друзей
@@ -1036,6 +1345,9 @@ async def start_route(callback_query: types.CallbackQuery):
     )
 
     await callback_query.message.edit_text("Выберите, какие путешествия вас интересуют:", reply_markup=keyboard_markup)
+
+
+
 
 # Обработчики для выбора путешествий пользователя или друзей для построения маршрута до начальной точки
 @dp.callback_query_handler(lambda callback_query: callback_query.data in ['my_trips_start', 'friend_trips_start'])
@@ -1061,6 +1373,27 @@ async def select_trip_type_start(callback_query: types.CallbackQuery):
         keyboard_markup.add(InlineKeyboardButton(trip['trip_name'], callback_data=f"select_trip_{trip['trip_id']}"))
     keyboard_markup.add(InlineKeyboardButton("Назад ↩️", callback_data="start_route"))
     await callback_query.message.edit_text(message_text, reply_markup=keyboard_markup)
+# Обработчик для кнопки "Погода"--------------------------------------------------------------------------------------------------------------------------------------------
+@dp.callback_query_handler(lambda callback_query: callback_query.data == 'weather_forecast')
+async def weather_forecast_callback(callback_query: types.CallbackQuery):
+    # Создаем клавиатуру для выбора между своими путешествиями и путешествиями друзей
+    travel_choice_menu = types.InlineKeyboardMarkup(row_width=1)
+
+    # Добавляем кнопку "Мои путешествия" с соответствующим смайликом
+    my_travels_button = types.InlineKeyboardButton(text="Мои путешествия 👤", callback_data="my_travels")
+    travel_choice_menu.add(my_travels_button)
+
+    # Добавляем кнопку "Путешествия друзей" с соответствующим смайликом
+    friend_travels_button = types.InlineKeyboardButton(text="Путешествия друзей 👫", callback_data="friend_travels")
+    travel_choice_menu.add(friend_travels_button)
+
+    # Добавляем кнопку "Назад" для возможности вернуться к предыдущему меню
+    back_button = types.InlineKeyboardButton(text="Назад↩️", callback_data="next_page")
+    travel_choice_menu.add(back_button)
+
+    # Отправляем сообщение с клавиатурой выбора между своими путешествиями и путешествиями друзей
+    await callback_query.message.edit_text("Выберите, какие путешествия вас интересуют:", reply_markup=travel_choice_menu)
+
 
 
 if __name__ == '__main__':

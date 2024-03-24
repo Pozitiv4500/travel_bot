@@ -36,3 +36,7 @@ class AddPoints(StatesGroup):
 class AddUserToTrip(StatesGroup):
     Username = State()
     ChooseTrip=State()
+
+class NoteCreation(StatesGroup):
+    EnterNote = State()
+    ChooseNotePrivacy=State()
