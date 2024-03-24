@@ -16,7 +16,7 @@ MainMenu.add(travel_notes_button)
 travel_with_friends_button = types.InlineKeyboardButton(text="Путешествия с друзьями 👫",callback_data="travel_with_friends")
 MainMenu.add(travel_with_friends_button)
 # Добавляем кнопку "Прокладывание маршрута путешествия" с соответствующим смайликом
-plan_travel_route_button = types.InlineKeyboardButton(text="Прокладывание маршрута путешествия 🗺️",callback_data="plan_travel_route")
+plan_travel_route_button = types.InlineKeyboardButton(text="Маршруты 🚩️",callback_data="plan_travel_route")
 MainMenu.add(plan_travel_route_button)
 edit_profile_button = types.InlineKeyboardButton(text="Редактировать информацию о себе ✏️", callback_data="edit_profile")
 MainMenu.add(edit_profile_button)

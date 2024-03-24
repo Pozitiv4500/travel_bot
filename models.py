@@ -161,6 +161,17 @@ async def get_trip_points(trip_id):
     return trip_points
 
 
+async def get_location_data(trip_id: int, location_id: int):
+    # Запрос данных о выбранной локации из базы данных
+    location_query = """
+        SELECT location_name, latitude, longitude
+        FROM Locations
+        WHERE trip_id = $1 AND location_id = $2
+    """
+    location_data = await conn.fetchrow(location_query, trip_id, location_id)
+
+    return location_data
+
 async def get_user_trips_with_locations(user_id):
     query = """
         SELECT Trips.trip_id, Trips.trip_name, Trips.trip_description,Locations.location_name, Locations.latitude, Locations.longitude, Locations.visit_date, Locations.visit_end

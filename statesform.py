@@ -40,3 +40,6 @@ class AddUserToTrip(StatesGroup):
 class NoteCreation(StatesGroup):
     EnterNote = State()
     ChooseNotePrivacy=State()
+
+class WeatherForecastState(StatesGroup):
+    date = State()

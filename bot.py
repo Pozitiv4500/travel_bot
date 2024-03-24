@@ -1,13 +1,14 @@
 import logging
 import os
 from datetime import datetime
-import osmnx as ox
+# import osmnx as ox
+import requests
 from aiogram import Bot, Dispatcher, executor, types
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ContentType
 from geopy import Location
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 from keyboards import Location_keyboard, MainMenu, manage_travel_menu, change, right_city, right_city_2, \
     back_to_menu_travels_keyboard, right_city_3, right_city_reg, SecondPageMenu
 from geopy.geocoders import Nominatim
@@ -19,9 +20,13 @@ from models import db_start, create_profile, check_user_exists, edit_profile, cr
     check_trip_existence, get_user_trips_with_locations, format_trip_message, get_user_data, edit_trip_mod, \
     add_trip_point, get_user_trip_names, get_trip_points, delete_trip_point_by_id, delete_trip_by_id, \
     add_friend_to_trip, get_joined_trips_info, get_friends_trips_names, get_user_trip_names_format, get_invited_users, \
-    save_trip_note_to_db, get_trip_notes
+    save_trip_note_to_db, get_trip_notes, get_location_data
 
-from statesform import Registration, ChangeUser, MakeTravel, EditTravel, AddPoints, AddUserToTrip, NoteCreation
+from statesform import Registration, ChangeUser, MakeTravel, EditTravel, AddPoints, AddUserToTrip, NoteCreation, \
+    WeatherForecastState
+
+
+
 
 # Устанавливаем уровень логирования
 logging.basicConfig(level=logging.INFO)
@@ -874,14 +879,15 @@ async def   travel_notes_mess(mess):
 @dp.callback_query_handler(lambda callback_query: callback_query.data == 'create_note')
 async def start_note_creation(callback_query: types.CallbackQuery):
     keyboard_markup = types.InlineKeyboardMarkup(row_width=2)
-    own_travel_button = types.InlineKeyboardButton("Своё путешествие", callback_data="own_travel")
-    friends_travel_button = types.InlineKeyboardButton("Путешествие друзей", callback_data="friends_travel")
+    own_travel_button = types.InlineKeyboardButton("👤Моё путешествие", callback_data="own_travel")
+    friends_travel_button = types.InlineKeyboardButton("👥Путешествие друзей", callback_data="friends_travel")
+
     back_button = types.InlineKeyboardButton("⬅️ Назад", callback_data="travel_notes")
     keyboard_markup.add(own_travel_button, friends_travel_button, back_button)
 
 
     await callback_query.message.edit_text(
-        "Выберите тип путешествия:",
+        "Выберите, куда хотите добавить заметку:",
         reply_markup=keyboard_markup
     )
 
@@ -900,7 +906,7 @@ async def choose_travel_type(callback_query: types.CallbackQuery, state: FSMCont
     keyboard_markup = types.InlineKeyboardMarkup()
     keyboard_markup.add(back_button)
     if not trip_data:
-        await callback_query.message.edit_text("Пока тут нет путешествий. Выберите другой тип путешествия или создайте новое.",reply_markup=keyboard_markup)
+        await callback_query.message.edit_text("У вас пока нет путешествий 😔 Выберите путешествие друзей или сами создайте путешествие.",reply_markup=keyboard_markup)
         return
 
     keyboard_markup = types.InlineKeyboardMarkup()
@@ -1012,7 +1018,7 @@ async def choose_notes_travel_type(callback_query: types.CallbackQuery, state: F
 
     if not trip_data:
         await callback_query.message.edit_text(
-            "У вас нет путешествий. Выберите другой тип путешествия или создайте новое.", reply_markup=keyboard_markup)
+            "Ничего не найдено 😔 Поробуйте выбрать другой тип путешествия или сами создайте заметку.", reply_markup=keyboard_markup)
         return
     keyboard_markup = types.InlineKeyboardMarkup()
     choose_trip_message = "Выберите путешествие для просмотра заметок:"
@@ -1315,15 +1321,15 @@ async def build_trip_route(callback_query: types.CallbackQuery):
     location_names = [point['location_name'] for point in trip_points]
 
     # Строим маршрут по точкам
-    G = ox.graph_from_place(location_names[0], network_type='walk')
+    # G = ox.graph_from_place(location_names[0], network_type='walk')
     for i in range(1, len(location_names)):
         origin = location_names[i - 1]
         destination = location_names[i]
-        route = ox.shortest_path(G, origin, destination)
-        ox.plot_graph_route(G, route, route_linewidth=6, node_size=0, bgcolor='k', route_color='r')
+        # route = ox.shortest_path(G, origin, destination)
+        # ox.plot_graph_route(G, route, route_linewidth=6, node_size=0, bgcolor='k', route_color='r')
 
     # Сохраняем изображение маршрута
-    plt.savefig('trip_route.png')
+    # plt.savefig('trip_route.png')
 
     # Отправляем изображение пользователю
     with open('trip_route.png', 'rb') as photo:
@@ -1392,10 +1398,151 @@ async def weather_forecast_callback(callback_query: types.CallbackQuery):
     travel_choice_menu.add(back_button)
 
     # Отправляем сообщение с клавиатурой выбора между своими путешествиями и путешествиями друзей
-    await callback_query.message.edit_text("Выберите, какие путешествия вас интересуют:", reply_markup=travel_choice_menu)
+    await callback_query.message.edit_text("Выберите, какие путешествия вас интересуют для просмотра погоды:", reply_markup=travel_choice_menu)
+
+
+@dp.callback_query_handler(lambda callback_query: callback_query.data in ['my_travels', 'friend_travels'])
+async def travel_to_check_weather(callback_query: types.CallbackQuery, state: FSMContext):
+    back_button = types.InlineKeyboardButton("⬅️ Назад", callback_data="weather_forecast")
+    user_id = callback_query.from_user.id
+    keyboard_markup = types.InlineKeyboardMarkup()
+    keyboard_markup.add(back_button)
+
+    if callback_query.data == 'my_travels':
+        trip_data = await get_user_trip_names_format(user_id)
+        message_text = "Выберите свое путешествие для просмотра погоды:"
+    elif callback_query.data == 'friend_travels':
+        trip_data = await get_friends_trips_names(user_id)
+        message_text = "Выберите путешествие друга для просмотра погоды:"
+
+    if not trip_data:
+        await callback_query.message.edit_text(
+            "Ничего не найдено 😔 Попробуйте выбрать другой тип путешествия или создайте новое.",
+            reply_markup=keyboard_markup)
+        return
+    keyboard_markup = types.InlineKeyboardMarkup()
+
+    choose_trip_message = message_text
+    for trip in trip_data:
+        button = types.InlineKeyboardButton(trip['trip_name'], callback_data=f"view_weather_{trip['trip_id']}")
+        keyboard_markup.add(button)
+
+    await state.update_data(trip_data=trip_data)  # Сохраняем информацию о путешествиях в состоянии FSM
+    keyboard_markup.add(back_button)
+    await callback_query.message.edit_text(choose_trip_message, reply_markup=keyboard_markup)
+
+@dp.callback_query_handler(lambda callback_query: callback_query.data.startswith('view_weather_'))
+async def choose_location_for_weather(callback_query: types.CallbackQuery, state: FSMContext):
+    trip_id = int(callback_query.data.split('_')[-1])
+    trip_points = await get_trip_points(trip_id)  # Получаем список точек маршрута для выбранного путешествия
+    back_button = types.InlineKeyboardButton("⬅️ Назад", callback_data="weather_forecast")
+    location_choice_menu = types.InlineKeyboardMarkup(row_width=1)
+    location_choice_menu.add(back_button)
+    if not trip_points:
+        await callback_query.message.edit_text(
+            "Для этого путешествия нет доступных точек маршрута. Пожалуйста, добавьте точки маршрута и попробуйте снова.",reply_markup=location_choice_menu)
+        return
+
+    location_choice_menu = types.InlineKeyboardMarkup(row_width=1)
+    for point in trip_points:
+        button_text = f"{point['location_name']} ({point['visit_date']} - {point['visit_end']})"
+        button = types.InlineKeyboardButton(button_text,
+                                            callback_data=f"choose-location_{trip_id}_{point['location_id']}")
+        location_choice_menu.add(button)
+
+
+    location_choice_menu.add(back_button)
+
+    await callback_query.message.edit_text("Выберите локацию для просмотра погоды:", reply_markup=location_choice_menu)
+
+
+@dp.callback_query_handler(lambda callback_query: callback_query.data.startswith('choose-location_'))
+async def view_weather(callback_query: types.CallbackQuery, state: FSMContext):
+    # Разбиваем данные из callback_data
+    _, trip_id, location_id = callback_query.data.split('_')
+    trip_id = int(trip_id)
+    location_id = int(location_id)
+
+    # Получаем данные о выбранной локации из базы данных
+    location_data = await get_location_data(trip_id, location_id)
+    back_button = types.InlineKeyboardButton("⬅️ Назад", callback_data="weather_forecast")
+    location_choice_menu = types.InlineKeyboardMarkup(row_width=1)
+
+    location_choice_menu.add(back_button)
+    if not location_data:
+        await callback_query.message.edit_text("Не удалось получить информацию о выбранной локации.", reply_markup=location_choice_menu)
+        return
+
+    # Извлекаем данные о локации из полученной информации
+    location_name = location_data['location_name']
+    latitude = location_data['latitude']
+    longitude = location_data['longitude']
+
+    api_key = os.getenv('OPENWEATHERMAP_API_KEY')
+
+    # Формируем URL-адрес запроса к API OpenWeatherMap для получения прогноза погоды на сегодня и на 5 дней вперед
+    url = f"https://api.openweathermap.org/data/2.5/forecast?lat={latitude}&lon={longitude}&appid={api_key}&units=metric&lang=ru"
+
+    # Отправляем запрос к API OpenWeatherMap и получаем прогноз погоды на сегодня и на 5 дней вперед
+    response = requests.get(url)
+    data = response.json()
+
+    if 'list' not in data:
+        await callback_query.message.edit_text("Не удалось получить прогноз погоды для выбранной локации.", reply_markup=location_choice_menu)
+        return
+
+    # Извлечение информации о погоде на сегодня
+    today_weather = data['list'][0]
+    temperature_today = today_weather['main']['temp']
+    feels_like_today = today_weather['main']['feels_like']
+    description_today = today_weather['weather'][0]['description']
+
+    # Формируем сообщение с текущей погодой и прогнозом на ближайшие 5 дней
+    current_weather_message = f"<b>Прогноз погоды для местоположения:</b>\n{location_name}:\n\n<b>Сейчас:</b>\nТемпература: {temperature_today}°C\nОщущается как: {feels_like_today}°C\nОписание: {description_today}\n\n<b>Прогноз на ближайшие 5 дней:</b>\n\n"
+
+    # Извлекаем информацию о погоде каждые 24 часа на следующие 5 дней
+    for forecast in data['list'][1:]:
+        date_time = datetime.strptime(forecast['dt_txt'], '%Y-%m-%d %H:%M:%S')
+        if date_time.hour == 6 or date_time.hour == 18:  # Проверяем, если это прогноз на следующий день
+            date_time_formatted = date_time.strftime('%Y-%m-%d %H:%M:%S')
+            temperature = forecast['main']['temp']
+            feels_like = forecast['main']['feels_like']
+            description = forecast['weather'][0]['description']
+            current_weather_message += f"<b>{date_time_formatted}:</b>\nТемпература: {temperature}°C\nОщущается как: {feels_like}°C\nОписание: {description}\n\n"
+
+    # Отправка сообщения с прогнозом погоды
+    await callback_query.message.edit_text(current_weather_message, reply_markup=location_choice_menu, parse_mode="HTML")
+
+    # Завершаем состояние FSM
+    await state.finish()
 
 
 
+# Обработчик для кнопки "Подбор билетов"--------------------------------------------------------------------------------------------------------------------------------------------
+@dp.callback_query_handler(lambda callback_query: callback_query.data == 'ticket_booking')
+async def ticket_booking_handler(callback_query: CallbackQuery):
+    await callback_query.answer()
+    # Здесь можно добавить логику для подбора билетов и отправки информации о них пользователю
+
+# Обработчик для кнопки "Подбор отелей"--------------------------------------------------------------------------------------------------------------------------------------------
+@dp.callback_query_handler(lambda callback_query: callback_query.data == 'hotel_selection')
+async def hotel_selection_handler(callback_query: CallbackQuery):
+    await callback_query.answer()
+    # Здесь можно добавить логику для подбора отелей и отправки информации о них пользователю
+
+# Обработчик для кнопки "Рекомендации по достопримечательностям"--------------------------------------------------------------------------------------------------------------------------------------------
+@dp.callback_query_handler(lambda callback_query: callback_query.data == 'sightseeing_recommendations')
+async def sightseeing_recommendations_handler(callback_query: CallbackQuery):
+    await callback_query.answer()
+    # Здесь можно добавить логику для предоставления рекомендаций по достопримечательностям и отправки информации о них пользователю
+
+
+# Обработчик для кнопки "Выбор кафе и ресторанов"---------------------------------------------------------------------------------------------------------------
+@dp.callback_query_handler(lambda callback_query: callback_query.data == 'restaurant_selection')
+async def restaurant_selection_handler(callback_query: CallbackQuery):
+    await callback_query.answer()
+
+    # Здесь можно добавить логику для выбора кафе и ресторанов и отправки информации о них пользователю
 if __name__ == '__main__':
     executor.start_polling(dp,
                            skip_updates=True,
