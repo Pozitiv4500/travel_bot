@@ -33,11 +33,13 @@
 
 1. **Регистрация:**
 - Через компьютер с указанием геопозиции
+
 https://github.com/Central-University-IT-prod/backend-Pozitiv4500/assets/123630113/53a0fe19-f7c0-4d81-8e24-a57e6ab3e1c3
 
 
 - Через телефон с отправкой геопозиции
-https://github.com/Central-University-IT-prod/backend-Pozitiv4500/assets/123630113/086049ad-3a28-4872-a60b-4f13ea667ca5
+
+https://github.com/Central-University-IT-prod/backend-Pozitiv4500/assets/123630113/6f79aced-1ee9-441b-9387-c38f888e0741
 
 2. **Редактирование информации о себе:**
 - Через компьютер с указанием геопозиции
