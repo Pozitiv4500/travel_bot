@@ -1661,8 +1661,12 @@ async def view_weather(callback_query: types.CallbackQuery, state: FSMContext):
     feels_like_today = today_weather['main']['feels_like']
     description_today = today_weather['weather'][0]['description']
 
-    # Формируем сообщение с текущей погодой и прогнозом на ближайшие 5 дней
-    current_weather_message = f"<b>Прогноз погоды для местоположения:</b>\n{location_name}:\n\n<b>Сейчас:</b>\nТемпература: {temperature_today}°C\nОщущается как: {feels_like_today}°C\nОписание: {description_today}\n\n<b>Прогноз на ближайшие 5 дней:</b>\n\n"
+    current_weather_message = f"🌤 <b>Прогноз погоды для местоположения:</b>\n<u>{location_name}</u>:\n\n"
+    current_weather_message += "<b>Сейчас:</b>\n"
+    current_weather_message += f"▫️ <b>Температура:</b> {temperature_today}°C\n"
+    current_weather_message += f"▫️ <b>Ощущается как:</b> {feels_like_today}°C\n"
+    current_weather_message += f"▫️ <i>Описание:</i> {description_today}\n\n"
+    current_weather_message += "<b>Прогноз на ближайшие 5 дней:</b>\n\n"
 
     # Извлекаем информацию о погоде каждые 24 часа на следующие 5 дней
     for forecast in data['list'][1:]:
@@ -1672,10 +1676,14 @@ async def view_weather(callback_query: types.CallbackQuery, state: FSMContext):
             temperature = forecast['main']['temp']
             feels_like = forecast['main']['feels_like']
             description = forecast['weather'][0]['description']
-            current_weather_message += f"<b>{date_time_formatted}:</b>\nТемпература: {temperature}°C\nОщущается как: {feels_like}°C\nОписание: {description}\n\n"
+            current_weather_message += f"<b>{date_time_formatted}:</b>\n"
+            current_weather_message += f"▫️ <b>Температура:</b> {temperature}°C\n"
+            current_weather_message += f"▫️ <b>Ощущается как:</b> {feels_like}°C\n"
+            current_weather_message += f"▫️ <i>Описание:</i> {description}\n\n"
 
     # Отправка сообщения с прогнозом погоды
-    await callback_query.message.edit_text(current_weather_message, reply_markup=location_choice_menu, parse_mode="HTML")
+    await callback_query.message.edit_text(current_weather_message, reply_markup=location_choice_menu,
+                                           parse_mode="HTML")
 
     # Завершаем состояние FSM
     await state.finish()
@@ -1690,9 +1698,149 @@ async def ticket_booking_handler(callback_query: CallbackQuery):
 
 # Обработчик для кнопки "Подбор отелей"--------------------------------------------------------------------------------------------------------------------------------------------
 @dp.callback_query_handler(lambda callback_query: callback_query.data == 'hotel_selection')
-async def hotel_selection_handler(callback_query: CallbackQuery):
-    await callback_query.answer()
-    # Здесь можно добавить логику для подбора отелей и отправки информации о них пользователю
+async def hotel_selection_callback(callback_query: types.CallbackQuery):
+    # Создаем клавиатуру для выбора между своими отелями и отелями друзей
+    hotel_choice_menu = types.InlineKeyboardMarkup(row_width=1)
+
+    # Добавляем кнопку "Мои отели" с соответствующим смайликом
+    my_hotels_button = types.InlineKeyboardButton(text="Мои путешествия 👤", callback_data="my_hotels")
+    hotel_choice_menu.add(my_hotels_button)
+
+    # Добавляем кнопку "Отели друзей" с соответствующим смайликом
+    friend_hotels_button = types.InlineKeyboardButton(text="Путешествия друзей 👫", callback_data="friend_hotels")
+    hotel_choice_menu.add(friend_hotels_button)
+
+    # Добавляем кнопку "Назад" для возможности вернуться к предыдущему меню
+    back_button = types.InlineKeyboardButton(text="Назад↩️", callback_data="next_page")
+    hotel_choice_menu.add(back_button)
+
+    # Отправляем сообщение с клавиатурой выбора между своими отелями и отелями друзей
+    await callback_query.message.edit_text("Выберите, какие путешествия вас интересуют для просмотра достопримечатльностей:", reply_markup=hotel_choice_menu)
+
+@dp.callback_query_handler(lambda callback_query: callback_query.data in ['my_hotels', 'friend_hotels'])
+async def hotel_selection_handler(callback_query: types.CallbackQuery, state: FSMContext):
+    back_button = types.InlineKeyboardButton("⬅️ Назад", callback_data="hotel_selection")
+    user_id = callback_query.from_user.id
+    keyboard_markup = types.InlineKeyboardMarkup()
+    keyboard_markup.add(back_button)
+
+    if callback_query.data == 'my_hotels':
+        hotel_data = await get_user_trip_names_format(user_id)
+        message_text = "Выберите одно из ваших путешествий:"
+    elif callback_query.data == 'friend_hotels':
+        hotel_data = await get_friends_trips_names(user_id)
+        message_text = "Выберите одно из путешествий друзей:"
+
+    if not hotel_data:
+        await callback_query.message.edit_text(
+            "Ничего не найдено 😔 Попробуйте выбрать другой тип отеля или добавить новый.",
+            reply_markup=keyboard_markup)
+        return
+
+    keyboard_markup = types.InlineKeyboardMarkup()
+    choose_hotel_message = message_text
+
+    for hotel in hotel_data:
+        button = types.InlineKeyboardButton(hotel['trip_name'], callback_data=f"view_hotel_{hotel['trip_id']}")
+        keyboard_markup.add(button)
+
+    await state.update_data(hotel_data=hotel_data)  # Сохраняем информацию об отелях в состоянии FSM
+    keyboard_markup.add(back_button)
+    await callback_query.message.edit_text(choose_hotel_message, reply_markup=keyboard_markup)
+
+@dp.callback_query_handler(lambda callback_query: callback_query.data.startswith('view_hotel_'))
+async def choose_location_for_hotel(callback_query: types.CallbackQuery, state: FSMContext):
+    trip_id = int(callback_query.data.split('_')[-1])
+    trip_points = await get_trip_points(trip_id)  # Получаем список точек маршрута для выбранного путешествия
+    back_button = types.InlineKeyboardButton("⬅️ Назад", callback_data="hotel_selection")
+    location_choice_menu = types.InlineKeyboardMarkup(row_width=1)
+    location_choice_menu.add(back_button)
+    if not trip_points:
+        await callback_query.message.edit_text(
+            "Для этого путешествия нет доступных точек маршрута. Пожалуйста, добавьте точки маршрута и попробуйте снова.",
+            reply_markup=location_choice_menu)
+        return
+
+    location_choice_menu = types.InlineKeyboardMarkup(row_width=1)
+    for point in trip_points:
+        button_text = f"{point['location_name']} ({point['visit_date']} - {point['visit_end']})"
+        button = types.InlineKeyboardButton(button_text,
+                                            callback_data=f"hotel-choose-location_{trip_id}_{point['location_id']}")
+        location_choice_menu.add(button)
+
+    location_choice_menu.add(back_button)
+
+    await callback_query.message.edit_text("Выберите локацию для просмотра информации о достопримечательностях рядом с ней:",
+                                           reply_markup=location_choice_menu)
+@dp.callback_query_handler(lambda callback_query: callback_query.data.startswith('hotel-choose-location_'))
+async def send_hotel_information(callback_query: types.CallbackQuery, state: FSMContext):
+    # Получаем идентификатор путешествия, идентификатор локации и идентификатор точки маршрута
+    _, trip_id, location_id = callback_query.data.split('_')
+    trip_id = int(trip_id)
+    location_id = int(location_id)
+
+    back_button = types.InlineKeyboardButton("⬅️ Назад", callback_data="hotel_selection")
+    location_choice_menu = types.InlineKeyboardMarkup(row_width=1)
+    location_choice_menu.add(back_button)
+
+    # Получаем данные о выбранной локации из базы данных
+    location_data = await get_location_data(trip_id, location_id)
+    if not location_data:
+        await callback_query.message.edit_text("Локация не найдена.",reply_markup=location_choice_menu)
+        return
+
+    # Извлекаем данные о местоположении из результата запроса
+    location_name = location_data['location_name']
+    latitude = location_data['latitude']
+    longitude = location_data['longitude']
+
+    url = "https://api.foursquare.com/v3/places/search"
+    params = {
+        "ll": f"{latitude},{longitude}",
+        "categories": "16000,10000",
+        "sort": "rating",
+        "fields": "name,location,description,hours",
+        'radius': 12000
+    }
+
+    headers = {
+        "accept": "application/json",
+        "Authorization": "fsq3Q60MwP12TYiWttv25APgEc+Qedh/UiYGXRgNGrAZE5w=",
+        "Accept-Language": "ru"
+    }
+
+    response = requests.get(url, params=params, headers=headers)
+
+    if response.status_code == 200:
+        data = response.json()
+        places = data['results']
+        if places:
+            places_message = "🌟 <b>Вот несколько ближайших мест, которые могут вас заинтересовать:</b> 🌟\n\n"
+            for place in places:
+                place_name = f"<b>{place['name']}</b>"
+                place_address = place['location'].get('formatted_address', '').strip()
+                if not place_address:
+                    place_address = '-'
+                description = place.get('description', '-')
+                hours_info = place.get('hours', {}).get('display', '')  # Get the display string
+                if hours_info:
+                    hours_string = hours_info.split('; ')[0]  # Extracting the opening hours part
+                else:
+                    hours_string = 'График работы неизвестен'
+                places_message += f"▫️ <u>Место:</u> {place_name}\n▫️ <b>Адрес:</b> {place_address}\n▫️ <i>Описание:</i> {description}\n▫️ <b>График работы:</b> {hours_string}\n\n"
+
+            await callback_query.message.edit_text(places_message, reply_markup=location_choice_menu, parse_mode="HTML")
+        else:
+            await callback_query.message.edit_text(
+                "К сожалению, в радиусе 22 километров не найдено ни одной достопримечательности. 😔",
+                reply_markup=location_choice_menu
+            )
+    else:
+        await callback_query.message.edit_text(
+            "Не удалось получить информацию о местах. Попробуйте позже. 😔",
+            reply_markup=location_choice_menu
+        )
+
 
 # Обработчик для кнопки "Рекомендации по достопримечательностям"--------------------------------------------------------------------------------------------------------------------------------------------
 @dp.callback_query_handler(lambda callback_query: callback_query.data == 'sightseeing_recommendations')
