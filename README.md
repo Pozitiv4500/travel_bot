@@ -103,5 +103,5 @@
    - **note_date**: Дата создания заметки (TIMESTAMP, DEFAULT CURRENT_TIMESTAMP).
    - **is_private**: Флаг приватности заметки (TRUE, если заметка приватная, FALSE, если общедоступная).
   
-![PosgreSQL](https://github.com/Central-University-IT-prod/backend-Pozitiv4500/assets/123630113/42167991-c2d2-444b-9264-92c267f23b9b)
+![PosgreSQL](https://github.com/Central-University-IT-prod/backend-Pozitiv4500/assets/123630113/2823c93c-90b2-456a-91b8-48f70eee27ce)
 
