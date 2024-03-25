@@ -44,17 +44,52 @@ async def on_startup(_):
 
 
 
+
 # Хэндлер на сообщения с возрастом пользователя
 @dp.message_handler(commands=['start'])
 async def process_age(message: types.Message):
     # Получаем имя пользователя из профиля
+    username = message.from_user.username
+    name = message.from_user.full_name
+    retry_button = InlineKeyboardButton("Повторить попытку", callback_data="retry_registration")
+    retry_keyboard = InlineKeyboardMarkup().add(retry_button)
     if await check_user_exists(message.from_user.id):
         await message.answer(welcome_message, reply_markup=MainMenu)
+    elif not username:
+        await message.reply(
+            f"Доброго полудня, {name}! Пожалуйста в настройках телеграм введите ваш ник пользователя, а затем возвращайтесь к нам, чтобы продолжить регистрацию",reply_markup=retry_keyboard)
     else:
-        name = message.from_user.full_name
+
         await message.reply(
             f"Доброго полудня, {name}! Я помогу тебе организовать твоё путешествие. Для начала давай узнаем о тебе немного больше.")
         await message.answer(f"Сколько тебе лет? (Введите ваш возраст)")
+        await Registration.Age.set()
+
+# @dp.callback_query_handler(lambda callback_query: callback_query.data == 'retry_registration')
+# async def retry_registration(callback_query: types.CallbackQuery):
+#     # Отправляем сообщение с запросом имени пользователя
+#     await process_age_mess(callback_query)
+@dp.callback_query_handler(lambda callback_query: callback_query.data == 'retry_registration')
+async def process_age_mess(callback_query: types.CallbackQuery):
+    # Получаем имя пользователя из профиля
+    username = callback_query.from_user.username
+    name = callback_query.from_user.full_name
+    retry_button = InlineKeyboardButton("Повторить попытку", callback_data="retry_registration")
+    retry_keyboard = InlineKeyboardMarkup().add(retry_button)
+    if await check_user_exists(callback_query.from_user.id):
+        await callback_query.message.edit_text(welcome_message, reply_markup=MainMenu)
+    elif not username:
+        if callback_query.message.text != f"Ник не найден, {name}! Пожалуйста в настройках телеграм введите ваше имя пользователя, а затем возвращайтесь к нам, чтобы продолжить регистрацию":
+            await callback_query.message.edit_text(
+                f"Ник не найден, {name}! Пожалуйста в настройках телеграм введите ваше имя пользователя, а затем возвращайтесь к нам, чтобы продолжить регистрацию",reply_markup=retry_keyboard)
+        else:
+            await callback_query.message.edit_text(
+                f"Ник не найден, {name}. Пожалуйста в настройках телеграм введите ваше имя пользователя, а затем возвращайтесь к нам, чтобы продолжить регистрацию",
+                reply_markup=retry_keyboard)
+    else:
+        await callback_query.message.edit_text(
+            f"Ник найден, {name}! Я помогу тебе организовать твоё путешествие, но для начала давай узнаем о тебе немного больше.")
+        await callback_query.message.answer(f"Сколько тебе лет? (Введите ваш возраст)")
         await Registration.Age.set()
 
 # Хэндлер на сообщения с возрастом пользователя
@@ -84,8 +119,8 @@ async def process_city_or_location(message: types.Message, state: FSMContext):
         location_name = location.address if location else "Неизвестно"
 
         await state.update_data(latitude=latitude, longitude=longitude, location=location_name)
-        await state.set_state(Registration.ConfirmLocation)  # Завершаем текущее состояние
-        await confirm_city_already(message,state)
+
+        await confirm_city_mess(message,state)
 
     else:
         # Если пользователь отправил текст, проверяем, является ли он названием города
@@ -104,21 +139,28 @@ async def process_city_or_location(message: types.Message, state: FSMContext):
             # Город не найден, отправляем сообщение с кнопками "Всё верно" и "Наверное"
             await message.reply("Ваш населенный пункт не найден. Пожалуйста, попробуйте ввести название вашего населенного пункта ещё раз.")
 
-async def confirm_city_already(message, state: FSMContext):
+# async def confirm_city_already(message, state: FSMContext):
+#
+#     # Сохраняем профиль пользователя в базе данных
+#     user_data = await state.get_data()
+#     user_id = message.from_user.id
+#     age = user_data.get('age')
+#     latitude = user_data.get('latitude')
+#     longitude = user_data.get('longitude')
+#     bio = user_data.get('bio')
+#     location = user_data.get('location')
+#     username = message.from_user.username  # Получаем имя пользователя
+#     await create_profile(user_id, age, location, latitude, longitude, bio, username)
+#     await message.answer("Спасибо за предоставленную информацию!")
+#     await state.finish()
+#     await show_menu(message)
 
-    # Сохраняем профиль пользователя в базе данных
-    user_data = await state.get_data()
-    user_id = message.from_user.id
-    age = user_data.get('age')
-    latitude = user_data.get('latitude')
-    longitude = user_data.get('longitude')
-    bio = user_data.get('bio')
-    location = user_data.get('location')
-    username = message.from_user.username  # Получаем имя пользователя
-    await create_profile(user_id, age, location, latitude, longitude, bio, username)
-    await message.answer("Спасибо за предоставленную информацию!")
-    await state.finish()
-    await show_menu(message)
+
+async def confirm_city_mess(mess, state: FSMContext):
+    await state.set_state(Registration.Bio)  # Завершаем текущее состояние
+    await mess.answer(
+        "Пожалуйста, расскажите нам немного о себе! Напишите немного о себе: кем вы являетесь, чем увлекаетесь, какие у вас интересы?")  # Изменяем сообщение с подтверждением
+
 
 # Хэндлер для кнопки "Всё верно"
 @dp.callback_query_handler(lambda c: c.data == 'city_confirm', state=Registration.ConfirmLocation)
@@ -151,10 +193,12 @@ async def process_bio(message: types.Message, state: FSMContext):
     bio = user_data.get('bio')
     location = user_data.get('location')
     username = message.from_user.username  # Получаем имя пользователя
+
     await create_profile(user_id, age, location, latitude, longitude, bio, username)
     await message.reply("Спасибо за предоставленную информацию!")
     await state.finish()
     await show_menu(message)
+
 
 # Хэндлер для кнопки "Наверное"
 @dp.callback_query_handler(lambda c: c.data == 'city_reenter', state=Registration.ConfirmLocation)
