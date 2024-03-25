@@ -43,3 +43,6 @@ class NoteCreation(StatesGroup):
 
 class WeatherForecastState(StatesGroup):
     date = State()
+
+class Road_to_Trip(StatesGroup):
+    Placment=State()

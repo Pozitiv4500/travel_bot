@@ -1,20 +1,21 @@
 import logging
 import os
 from datetime import datetime
-# import osmnx as ox
+
 import requests
 from aiogram import Bot, Dispatcher, executor, types
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ContentType
 from geopy import Location
-# import matplotlib.pyplot as plt
+
 from keyboards import Location_keyboard, MainMenu, manage_travel_menu, change, right_city, right_city_2, \
     back_to_menu_travels_keyboard, right_city_3, right_city_reg, SecondPageMenu
 from geopy.geocoders import Nominatim
 
 
 from config import BOT_TOKEN
+from map_creating import create_static_map, get_route_points
 from messages import welcome_message, SecondPageWelcomeMessage
 from models import db_start, create_profile, check_user_exists, edit_profile, create_trip_db, create_location, \
     check_trip_existence, get_user_trips_with_locations, format_trip_message, get_user_data, edit_trip_mod, \
@@ -23,10 +24,7 @@ from models import db_start, create_profile, check_user_exists, edit_profile, cr
     save_trip_note_to_db, get_trip_notes, get_location_data
 
 from statesform import Registration, ChangeUser, MakeTravel, EditTravel, AddPoints, AddUserToTrip, NoteCreation, \
-    WeatherForecastState
-
-
-
+    WeatherForecastState, Road_to_Trip
 
 # Устанавливаем уровень логирования
 logging.basicConfig(level=logging.INFO)
@@ -266,7 +264,7 @@ async def edit_profile_r(message):
 @dp.callback_query_handler(lambda callback_query: callback_query.data == "edit_location")
 async def edit_location(callback_query: types.CallbackQuery):
     await ChangeUser.Location.set()
-    await callback_query.message.answer(
+    await callback_query.message.edit_text(
         "Чтобы обновить ваше местоположение, нажмите на кнопку ниже или введите название вашего населенного пункта вручную 📍",
         reply_markup=Location_keyboard)
 
@@ -324,7 +322,7 @@ async def process_location(callback_query: CallbackQuery, state: FSMContext):
     home_name = data.get('location')
     id = data.get('id')
     await edit_profile(id, home_name=home_name,latitude=latitude, longitude=longitude)
-    await callback_query.message.answer("Местоположение успешно обновлено! 📍")
+    await callback_query.message.edit_text("Местоположение успешно обновлено! 📍")
     await edit_profile_r(callback_query)
     await state.finish()
 
@@ -1258,29 +1256,29 @@ async def plan_travel_route_mess(mess):
 
 
 # Обработчик для кнопки "Прокладывание маршрута путешествия"
-# Обработчик для кнопки "Прокладывание маршрута путешествия"
 @dp.callback_query_handler(lambda callback_query: callback_query.data == 'travel_route')
 async def travel_route(callback_query: types.CallbackQuery):
     # Создаем клавиатуру с кнопками для выбора путешествий пользователя или друзей
     keyboard_markup = InlineKeyboardMarkup(row_width=1)
     keyboard_markup.add(
-        InlineKeyboardButton("Мои путешествия", callback_data="my_trips"),
-        InlineKeyboardButton("Путешествия друзей", callback_data="friend_trips"),
+        InlineKeyboardButton("Мои путешествия", callback_data="my_trips_travel"),
+        InlineKeyboardButton("Путешествия друзей", callback_data="friend_trips_travel"),
         InlineKeyboardButton("Назад ↩️", callback_data="plan_travel_route")
     )
 
     await callback_query.message.edit_text("Выберите, какие путешествия вас интересуют:", reply_markup=keyboard_markup)
 
 # Обработчики для выбора путешествий пользователя или друзей
-@dp.callback_query_handler(lambda callback_query: callback_query.data in ['my_trips', 'friend_trips'])
+@dp.callback_query_handler(lambda callback_query: callback_query.data in ['my_trips_travel', 'friend_trips_travel'])
 async def select_trip_type(callback_query: types.CallbackQuery):
     user_id = callback_query.from_user.id
     trip_type = callback_query.data
 
     # Получаем соответствующие путешествия (пользовательские или путешествия друзей)
-    if trip_type == 'my_trips':
+    if trip_type == 'my_trips_travel':
         trips = await get_user_trip_names_format(user_id)
         message_text = "Выберите путешествие из ваших:"
+
     else:
         trips = await get_friends_trips_names(user_id)
         message_text = "Выберите путешествие из путешествий ваших друзей:"
@@ -1292,51 +1290,50 @@ async def select_trip_type(callback_query: types.CallbackQuery):
     # Создаем клавиатуру с кнопками для выбора путешествия
     keyboard_markup = InlineKeyboardMarkup(row_width=1)
     for trip in trips:
-        keyboard_markup.add(InlineKeyboardButton(trip['trip_name'], callback_data=f"select_trip_route_{trip['trip_id']}"))
+        keyboard_markup.add(InlineKeyboardButton(trip['trip_name'], callback_data=f"route_select_trip_{trip['trip_id']}"))
     keyboard_markup.add(InlineKeyboardButton("Назад ↩️", callback_data="travel_route"))
 
     await callback_query.message.edit_text(message_text, reply_markup=keyboard_markup)
 
-@dp.callback_query_handler(lambda callback_query: callback_query.data.startswith('select_trip_route_'))
-async def build_trip_route(callback_query: types.CallbackQuery):
-    # Получаем идентификатор путешествия из данных коллбэка
-    trip_id = int(callback_query.data.split('_')[-1])
 
-    # Получаем точки маршрута путешествия
-    trip_points = await get_trip_points(trip_id)
+@dp.callback_query_handler(lambda callback_query: callback_query.data.startswith('route_select_trip_'))
+async def build_trip_route(callback_query: types.CallbackQuery):
+    keyboard_markup = InlineKeyboardMarkup(row_width=1)
+    keyboard_markup.add(InlineKeyboardButton("Назад ↩️", callback_data="travel_route"))
+
+    trip_id = int(callback_query.data.split('_')[-1])
+    trip_points = await get_trip_points(trip_id)  # Получаем точки маршрута путешествия
 
     if not trip_points:
-        await callback_query.message.answer("Точки маршрута для выбранного путешествия не найдены.")
-        await plan_travel_route_mess(callback_query.message)
+        await callback_query.message.edit_text("Точки маршрута для выбранного путешествия не найдены.", reply_markup=keyboard_markup)
+
         return
 
-    # Если в путешествии всего одна точка, возвращаем пользователя в изначальное меню
-    # if len(trip_points) == 1:
-    #     await callback_query.message.answer(
-    #         "Ой, в вашем путешествии всего одна точка маршрута! Добавьте еще несколько точек, чтобы проложить маршрут 😊🌍")
-    #     await plan_travel_route_mess(callback_query.message)
-    #     return
+    if len(trip_points)==1:
+        await callback_query.message.edit_text("В маршруте только одна локация. По ней нельзя построить маршрут :(", reply_markup=keyboard_markup)
 
-    # Создаем список названий местоположений
-    location_names = [point['location_name'] for point in trip_points]
+        return
 
-    # Строим маршрут по точкам
-    # G = ox.graph_from_place(location_names[0], network_type='walk')
-    for i in range(1, len(location_names)):
-        origin = location_names[i - 1]
-        destination = location_names[i]
-        # route = ox.shortest_path(G, origin, destination)
-        # ox.plot_graph_route(G, route, route_linewidth=6, node_size=0, bgcolor='k', route_color='r')
+    # Формируем список координат для всех точек маршрута
+    coordinates = [[point['longitude'], point['latitude']] for point in trip_points]
 
-    # Сохраняем изображение маршрута
-    # plt.savefig('trip_route.png')
+    # Получаем координаты маршрута
+    route_points =await get_route_points(coordinates)
 
-    # Отправляем изображение пользователю
-    with open('trip_route.png', 'rb') as photo:
-        await callback_query.message.answer_photo(photo, caption="Маршрут путешествия")
+    if not route_points:
+        await callback_query.message.edit_text("Маршрут для выбранного путешествия невозможно построить", reply_markup=keyboard_markup)
 
-    # Удаляем временный файл
-    os.remove('trip_route.png')
+        return
+
+    # Создаем статическую карту на основе координат маршрута
+    image_path = await create_static_map(route_points, trip_points)
+
+    # Отправляем картинку с маршрутом пользователю
+    with open(image_path, 'rb') as image_file:
+        await bot.send_photo(callback_query.from_user.id, image_file, caption="🗺️ Ваш маршрут готов!")
+
+    os.remove(image_path)
+    await plan_travel_route_mess(callback_query.message)
 
 
 # Обработчик для кнопки "Построить маршрут до начальной точки путешествия"--------------------------------------------------------------------------------------------------------------------------------------------
@@ -1345,19 +1342,81 @@ async def start_route(callback_query: types.CallbackQuery):
     # Создаем клавиатуру с кнопками для выбора путешествий пользователя или друзей
     keyboard_markup = InlineKeyboardMarkup(row_width=1)
     keyboard_markup.add(
-        InlineKeyboardButton("Мои путешествия", callback_data="my_trips_start"),
-        InlineKeyboardButton("Путешествия друзей", callback_data="friend_trips_start"),
+        InlineKeyboardButton("Мои путешествия", callback_data="route_to_my_trips_start"),
+        InlineKeyboardButton("Путешествия друзей", callback_data="route_to_friend_trips_start"),
         InlineKeyboardButton("Назад ↩️", callback_data="plan_travel_route")
     )
 
     await callback_query.message.edit_text("Выберите, какие путешествия вас интересуют:", reply_markup=keyboard_markup)
 
 
+# Обработчики для выбора путешествий пользователя или друзей для начала маршрута
+@dp.callback_query_handler(lambda callback_query: callback_query.data in ['route_to_my_trips_start', 'route_to_friend_trips_start'])
+async def select_trip_type_for_start(callback_query: types.CallbackQuery):
+    user_id = callback_query.from_user.id
+    trip_type = callback_query.data
 
+    # Получаем соответствующие путешествия (пользовательские или путешествия друзей)
+    if trip_type == 'route_to_my_trips_start':
+        trips = await get_user_trip_names_format(user_id)
+        message_text = "Выберите путешествие из ваших:"
+
+    else:
+        trips = await get_friends_trips_names(user_id)
+        message_text = "Выберите путешествие из путешествий ваших друзей:"
+
+    if not trips:
+        await callback_query.message.edit_text("Путешествия не найдены. Создайте их или попросите друзей пригласить вас в их путешествие. 🌍🚀",
+                                               reply_markup=InlineKeyboardMarkup(row_width=1).add(
+                                                   InlineKeyboardButton("Назад ↩️", callback_data="start_route")))
+        return
+
+    # Создаем клавиатуру с кнопками для выбора путешествия
+    keyboard_markup = InlineKeyboardMarkup(row_width=1)
+    for trip in trips:
+        keyboard_markup.add(InlineKeyboardButton(trip['trip_name'], callback_data=f"start_select_trip_{trip['trip_id']}"))
+    keyboard_markup.add(InlineKeyboardButton("Назад ↩️", callback_data="start_route"))
+
+    await callback_query.message.edit_text(message_text, reply_markup=keyboard_markup)
+
+# Обработчик выбора путешествия для начала маршрута
+@dp.callback_query_handler(lambda callback_query: callback_query.data.startswith('start_select_trip_'))
+async def start_select_trip(callback_query: types.CallbackQuery, state: FSMContext):
+    # Получаем идентификатор выбранного путешествия
+    trip_id = int(callback_query.data.split('_')[-1])
+
+    # Отправляем запрос на отправку местоположения пользователем
+    await callback_query.message.edit_text("Пожалуйста, отправьте своё текущее местоположение 📍, чтобы мы могли построить маршрут до начальной точки путешествия.")
+
+
+    # Сохраняем идентификатор путешествия для последующего использования
+    await state.update_data(selected_trip_id=trip_id)
+    await state.set_state(Road_to_Trip.Placment)
+# Обработчик получения местоположения пользователя
+@dp.message_handler(state=Road_to_Trip.Placment)
+async def handle_location(message: types.Message, state: FSMContext):
+    # Получаем данные о путешествии из состояния
+
+
+    # Получаем координаты местоположения пользователя
+    location = geolocator.geocode(message.text)
+    await state.update_data(latitude=location.latitude, longitude=location.longitude)
+    if location:
+        # Если местоположение найдено, создайте кнопки для подтверждения
+        confirmation_keyboard = InlineKeyboardMarkup()
+        confirmation_keyboard.row(InlineKeyboardButton("Всё верно", callback_data="confirm_location"),
+                                  InlineKeyboardButton("Неверно", callback_data="retry_location"))
+
+        # Отправьте пользователю сообщение с предполагаемым местоположением и кнопками для подтверждения
+        await message.answer(f"По вашему запросу найдено место:\n{location.address}",
+                             reply_markup=confirmation_keyboard)
+    else:
+        # Если местоположение не найдено, запросите у пользователя ввод местоположения еще раз
+        await message.answer("Местоположение не найдено. Пожалуйста, попробуйте ввести его ещё раз.")
 
 # Обработчики для выбора путешествий пользователя или друзей для построения маршрута до начальной точки
 @dp.callback_query_handler(lambda callback_query: callback_query.data in ['my_trips_start', 'friend_trips_start'])
-async def select_trip_type_start(callback_query: types.CallbackQuery):
+async def select_trip_type_start(callback_query: types.CallbackQuery, state: FSMContext):
     user_id = callback_query.from_user.id
     trip_type = callback_query.data.replace("_start", "")
 
@@ -1379,6 +1438,67 @@ async def select_trip_type_start(callback_query: types.CallbackQuery):
         keyboard_markup.add(InlineKeyboardButton(trip['trip_name'], callback_data=f"select_trip_{trip['trip_id']}"))
     keyboard_markup.add(InlineKeyboardButton("Назад ↩️", callback_data="start_route"))
     await callback_query.message.edit_text(message_text, reply_markup=keyboard_markup)
+
+# Обработчик нажатия кнопки "Да, это то место"
+
+@dp.callback_query_handler(lambda callback_query: callback_query.data == 'confirm_location', state=Road_to_Trip.Placment)
+async def confirm_location(callback_query: types.CallbackQuery, state: FSMContext):
+    # Получаем данные о путешествии из состояния
+    state_data = await state.get_data()
+    trip_id = state_data.get("selected_trip_id")
+
+    # Получаем координаты местоположения из состояния
+    latitude = state_data.get("latitude")
+    longitude = state_data.get("longitude")
+
+    # Получаем данные о первой точке путешествия
+    trip_points = await get_trip_points(trip_id)
+    if not trip_points:
+        await callback_query.message.edit_text("Точки маршрута для выбранного путешествия не найдены.")
+        await state.finish()
+        await plan_travel_route_mess(callback_query.message)
+        return
+
+    # Получаем координаты первой точки путешествия
+    first_point = trip_points[0]
+    first_point_latitude = first_point['latitude']
+    first_point_longitude = first_point['longitude']
+
+    # Постройте маршрут от местоположения пользователя до первой точки путешествия
+    route_points = await get_route_points([(longitude, latitude), (first_point_longitude, first_point_latitude)])
+
+    if not route_points:
+        await callback_query.message.edit_text("Карту по точкам маршрута для выбранного путешествия невозможно построить :(")
+        await state.finish()
+        await plan_travel_route_mess(callback_query.message)
+        return
+    points = [
+        {"latitude": lat, "longitude": lon}
+        for lat, lon in [(first_point_latitude, first_point_longitude), (latitude, longitude)]
+    ]
+    # Создайте статическую карту на основе координат маршрута и первой точки путешествия
+    image_path = await create_static_map(route_points, points)
+
+    # Отправляем пользователю изображение с построенным маршрутом
+    with open(image_path, 'rb') as image_file:
+        await bot.send_photo(callback_query.from_user.id, image_file, caption="🗺️ Маршрут построен!")
+
+    # Сбрасываем состояние после сохранения местоположения
+    await state.finish()
+    os.remove(image_path)
+    await plan_travel_route_mess(callback_query.message)
+
+
+# Обработчик нажатия кнопки "Нет, ввести ещё раз"
+@dp.callback_query_handler(lambda callback_query: callback_query.data == 'retry_location', state=Road_to_Trip.Placment)
+async def retry_location(callback_query: types.CallbackQuery):
+    # Просим пользователя ввести местоположение ещё раз
+    await callback_query.message.edit_text("Пожалуйста, введите местоположение ещё раз.")
+
+
+
+
+
 # Обработчик для кнопки "Погода"--------------------------------------------------------------------------------------------------------------------------------------------
 @dp.callback_query_handler(lambda callback_query: callback_query.data == 'weather_forecast')
 async def weather_forecast_callback(callback_query: types.CallbackQuery):
