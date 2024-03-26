@@ -16,12 +16,10 @@ MainMenu.add(travel_notes_button)
 travel_with_friends_button = types.InlineKeyboardButton(text="Путешествия с друзьями 👫",callback_data="travel_with_friends")
 MainMenu.add(travel_with_friends_button)
 # Добавляем кнопку "Прокладывание маршрута путешествия" с соответствующим смайликом
-plan_travel_route_button = types.InlineKeyboardButton(text="Маршруты 🚩️",callback_data="plan_travel_route")
-MainMenu.add(plan_travel_route_button)
 edit_profile_button = types.InlineKeyboardButton(text="Редактировать информацию о себе ✏️", callback_data="edit_profile")
 MainMenu.add(edit_profile_button)
 
-next_page_button = types.InlineKeyboardButton(">>", callback_data="next_page")
+next_page_button = types.InlineKeyboardButton("▶️", callback_data="next_page")
 MainMenu.add(next_page_button)
 
 
@@ -30,22 +28,35 @@ SecondPageMenu = types.InlineKeyboardMarkup(row_width=2)
 SecondPageMenu.add(edit_profile_button)
 
 SecondPageMenu = types.InlineKeyboardMarkup(row_width=1)
+plan_travel_route_button = types.InlineKeyboardButton(text="Маршруты 🚩️",callback_data="plan_travel_route")
+SecondPageMenu.add(plan_travel_route_button)
 weather_forecast_button = types.InlineKeyboardButton(text="Прогноз погоды 🌦️", callback_data="weather_forecast")
-ticket_booking_button = types.InlineKeyboardButton(text="Подбор билетов 🎫", callback_data="ticket_booking")
-hotel_selection_button = types.InlineKeyboardButton(text="Рекомендации по достопримечательностям 🏛️", callback_data="hotel_selection")
-sightseeing_recommendations_button = types.InlineKeyboardButton(text="Подбор отелей 🏨", callback_data="sightseeing_recommendations")
+hotel_selection_button = types.InlineKeyboardButton(text="Достопримечательности 🏛️", callback_data="hotel_selection")
 restaurant_selection_button = types.InlineKeyboardButton(text="Выбор кафе и ресторанов 🍽️", callback_data="restaurant_selection")
+
+ticket_booking_button = types.InlineKeyboardButton(text="Подбор билетов 🎫", callback_data="ticket_booking")
+sightseeing_recommendations_button = types.InlineKeyboardButton(text="Подбор отелей 🏨", callback_data="sightseeing_recommendations")
 find_travel_buddies_button = types.InlineKeyboardButton(text="Поиск попутчиков 👫", callback_data="find_travel_buddies")
 expenses_management_button = types.InlineKeyboardButton(text="Учет общих расходов 💰", callback_data="expenses_management")
 
 # Добавляем кнопки на вторую страницу
-SecondPageMenu.add(weather_forecast_button, ticket_booking_button, hotel_selection_button)
-SecondPageMenu.add(sightseeing_recommendations_button, restaurant_selection_button, find_travel_buddies_button)
-SecondPageMenu.add(expenses_management_button)
+SecondPageMenu.add(weather_forecast_button, hotel_selection_button, restaurant_selection_button)
+ThirdPageMenu = types.InlineKeyboardMarkup(row_width=1)
+ThirdPageMenu.add(ticket_booking_button, sightseeing_recommendations_button, find_travel_buddies_button)
+ThirdPageMenu.add(expenses_management_button)
 
 # Добавляем кнопки для переключения между страницами
-previous_page_button = types.InlineKeyboardButton("<<", callback_data="previous_page")
+second_page_next = types.InlineKeyboardButton("▶️", callback_data="second_page_next")
+SecondPageMenu.add(second_page_next)
+previous_page_button = types.InlineKeyboardButton("◀️", callback_data="previous_page")
 SecondPageMenu.add(previous_page_button)
+
+
+third_page_back = types.InlineKeyboardButton("◀️", callback_data="third_page_back")
+ThirdPageMenu.add(third_page_back)
+
+
+
 
 manage_travel_menu = types.InlineKeyboardMarkup(row_width=1)
 manage_travel_menu.add(

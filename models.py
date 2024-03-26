@@ -210,19 +210,19 @@ async def check_trip_existence(trip_name):
 
 async def format_trip_message(trips_data):
     if not trips_data:
-        return "У вас пока нет созданных путешествий."
+        return "У вас пока нет созданных путешествий. 😔"
 
-    trip_message = "Путешествия:\n"
+    trip_message = "🌍 <b>Путешествия:</b>\n\n"
     current_trip_id = None
     for trip in trips_data:
         if trip['trip_id'] != current_trip_id:
             if current_trip_id is not None:
                 trip_message += "\n"  # Добавляем пустую строку между путешествиями
-            trip_message += f"🌍 Путешествие: {trip['trip_name']}\n"
-            trip_message += f"   Описание: {trip['trip_description'] or '-'}\n"
-            trip_message += "   Локации:\n"
+            trip_message += f"▶️ <b>Путешествие:</b> {trip['trip_name']}\n"
+            trip_message += f"   <i>Описание:</i> {trip['trip_description'] or '-'}\n"
+            trip_message += "   <b>Локации:</b>\n"
             current_trip_id = trip['trip_id']
-        trip_message += f"      - Место: {trip['location_name']} \n         -Дата посещения: {trip['visit_date']} \n         -Дата окончания посещения: {trip['visit_end']}\n"
+        trip_message += f"      - <u>Место:</u> {trip['location_name']} \n         -<i>Дата посещения:</i> {trip['visit_date']} \n         -<i>Дата окончания посещения:</i> {trip['visit_end']}\n"
 
     return trip_message
 
@@ -305,7 +305,7 @@ async def delete_trip_by_id(trip_id):
         # Затем удаляем саму поездку
         await conn.execute("DELETE FROM Trips WHERE trip_id = $1", int(trip_id))
 
-        print(f"Поездка с id {trip_id} успешно удалена.")
+
     except Exception as e:
         print(f"Ошибка при удалении поездки: {e}")
         raise e
@@ -386,7 +386,7 @@ async def save_trip_note_to_db(trip_id, user_id, message_type, file_id=None, not
 async def get_trip_notes(trip_id):
     try:
         query = """
-                SELECT message_type, file_id, is_private, user_id
+                SELECT message_type, file_id, is_private, user_id,note_id
                 FROM TripNotes
                 WHERE trip_id = $1
                 """
@@ -395,3 +395,11 @@ async def get_trip_notes(trip_id):
     except Exception as e:
         print(f"Ошибка при получении заметок о путешествии: {e}")
         return []
+
+async def delete_note_by_id(note_id: int):
+    try:
+        async with conn.transaction():
+            await conn.execute("DELETE FROM TripNotes WHERE note_id = $1", note_id)
+    except Exception as e:
+        # Обработка ошибок, если они возникнут при выполнении SQL-запроса
+        print(f"Error deleting note with ID {note_id}: {e}")

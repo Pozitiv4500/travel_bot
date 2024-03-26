@@ -10,18 +10,18 @@ from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardBut
 from geopy import Location
 
 from keyboards import Location_keyboard, MainMenu, manage_travel_menu, change, right_city, right_city_2, \
-    back_to_menu_travels_keyboard, right_city_3, right_city_reg, SecondPageMenu
+    back_to_menu_travels_keyboard, right_city_3, right_city_reg, SecondPageMenu, ThirdPageMenu
 from geopy.geocoders import Nominatim
 
 
 from config import BOT_TOKEN
 from map_creating import create_static_map, get_route_points
-from messages import welcome_message, SecondPageWelcomeMessage
+from messages import welcome_message, SecondPageWelcomeMessage, TrirdPageWelcomeMessage
 from models import db_start, create_profile, check_user_exists, edit_profile, create_trip_db, create_location, \
     check_trip_existence, get_user_trips_with_locations, format_trip_message, get_user_data, edit_trip_mod, \
     add_trip_point, get_user_trip_names, get_trip_points, delete_trip_point_by_id, delete_trip_by_id, \
     add_friend_to_trip, get_joined_trips_info, get_friends_trips_names, get_user_trip_names_format, get_invited_users, \
-    save_trip_note_to_db, get_trip_notes, get_location_data
+    save_trip_note_to_db, get_trip_notes, get_location_data, delete_note_by_id
 
 from statesform import Registration, ChangeUser, MakeTravel, EditTravel, AddPoints, AddUserToTrip, NoteCreation, \
     WeatherForecastState, Road_to_Trip
@@ -52,9 +52,9 @@ async def process_age(message: types.Message):
     username = message.from_user.username
     name = message.from_user.full_name
     retry_button = InlineKeyboardButton("Повторить попытку", callback_data="retry_registration")
-    retry_keyboard = InlineKeyboardMarkup().add(retry_button)
+    retry_keyboard = InlineKeyboardMarkup(row_width=1).add(retry_button)
     if await check_user_exists(message.from_user.id):
-        await message.answer(welcome_message, reply_markup=MainMenu)
+        await message.reply(welcome_message, reply_markup=MainMenu)
     elif not username:
         await message.reply(
             f"Доброго полудня, {name}! Пожалуйста в настройках телеграм введите ваш ник пользователя, а затем возвращайтесь к нам, чтобы продолжить регистрацию",reply_markup=retry_keyboard)
@@ -75,7 +75,7 @@ async def process_age_mess(callback_query: types.CallbackQuery):
     username = callback_query.from_user.username
     name = callback_query.from_user.full_name
     retry_button = InlineKeyboardButton("Повторить попытку", callback_data="retry_registration")
-    retry_keyboard = InlineKeyboardMarkup().add(retry_button)
+    retry_keyboard = InlineKeyboardMarkup(row_width=1).add(retry_button)
     if await check_user_exists(callback_query.from_user.id):
         await callback_query.message.edit_text(welcome_message, reply_markup=MainMenu)
     elif not username:
@@ -214,7 +214,7 @@ async def reenter_city(callback_query: CallbackQuery, state: FSMContext):
 @dp.message_handler()
 async def show_menu(message: types.Message):
     if await check_user_exists(message.from_user.id):
-        await message.answer(welcome_message, reply_markup=MainMenu)
+        await message.reply(welcome_message, reply_markup=MainMenu)
     else:
         await process_age(message)
 
@@ -231,6 +231,8 @@ async def send_menu_page(message: types.Message, page_number: int):
         await message.edit_text(welcome_message, reply_markup=MainMenu)
     elif page_number == 2:
         await message.edit_text(SecondPageWelcomeMessage, reply_markup=SecondPageMenu)
+    elif page_number == 3:
+        await message.edit_text(TrirdPageWelcomeMessage, reply_markup=ThirdPageMenu)
 
 # Обработчик для перехода на следующую страницу
 @dp.callback_query_handler(lambda callback_query: callback_query.data == 'next_page')
@@ -240,6 +242,14 @@ async def next_page(callback_query: types.CallbackQuery):
 @dp.callback_query_handler(lambda callback_query: callback_query.data == 'previous_page')
 async def previous_page(callback_query: types.CallbackQuery):
     await send_menu_page(callback_query.message, 1)
+
+@dp.callback_query_handler(lambda callback_query: callback_query.data == 'second_page_next')
+async def previous_page(callback_query: types.CallbackQuery):
+    await send_menu_page(callback_query.message, 3)
+
+@dp.callback_query_handler(lambda callback_query: callback_query.data == 'third_page_back')
+async def previous_page(callback_query: types.CallbackQuery):
+    await send_menu_page(callback_query.message, 2)
 
 #редактирование профиля ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -308,7 +318,7 @@ async def edit_profile_r(message):
 @dp.callback_query_handler(lambda callback_query: callback_query.data == "edit_location")
 async def edit_location(callback_query: types.CallbackQuery):
     await ChangeUser.Location.set()
-    await callback_query.message.edit_text(
+    await callback_query.message.answer(
         "Чтобы обновить ваше местоположение, нажмите на кнопку ниже или введите название вашего населенного пункта вручную 📍",
         reply_markup=Location_keyboard)
 
@@ -434,8 +444,8 @@ async def delete_trip(callback_query: types.CallbackQuery):
 
     trip_message = await format_trip_message(trips_data)
     # Отправляем сообщение с информацией о путешествиях и кнопками для удаления путешествия
-    await callback_query.message.edit_text(trip_message, reply_markup=types.InlineKeyboardMarkup().add(*buttons).add(
-        types.InlineKeyboardButton("Назад ↩️", callback_data="manage_travel")))
+    await callback_query.message.edit_text(trip_message, reply_markup=types.InlineKeyboardMarkup(row_width=1).add(*buttons).add(
+        types.InlineKeyboardButton("Назад ↩️", callback_data="manage_travel")), parse_mode="HTML")
 
     # Ответим на колбэк, чтобы убрать кружок ожидания
     await callback_query.answer()
@@ -601,7 +611,7 @@ async def edit_trip(callback_query: types.CallbackQuery):
     trip_message = await format_trip_message(trips_data)
 
     # Отправляем сообщение с информацией о путешествиях и кнопками для выбора путешествия для редактирования
-    await callback_query.message.edit_text(trip_message, reply_markup=types.InlineKeyboardMarkup().add(*buttons).add(types.InlineKeyboardButton("Назад ↩️", callback_data="manage_travel")))
+    await callback_query.message.edit_text(trip_message, reply_markup=types.InlineKeyboardMarkup(row_width=1).add(*buttons).add(types.InlineKeyboardButton("Назад ↩️", callback_data="manage_travel")), parse_mode="HTML")
 
     # Ответим на колбэк, чтобы убрать кружок ожидания
     await callback_query.answer()
@@ -722,17 +732,20 @@ async def process_add_trip_points(message: types.Message, state: FSMContext):
     trip_id = data.get('trip_id')
 
     # Пытаемся найти указанное место
-    location_info = geolocator.geocode(new_point)
+    try:
+        location_info = geolocator.geocode(new_point)
 
-    if location_info:
-        # Если место найдено успешно, спрашиваем пользователя подтверждение
-        await message.reply(f"Это ваша точка маршрута? {location_info}", reply_markup=right_city_3)
-        await state.update_data(location_info=location_info.address)
-        await state.update_data(latitude=location_info.latitude)
-        await state.update_data(longitude=location_info.longitude)
-        await AddPoints.ConfirmPoint.set()
-    else:
-        # Если место не найдено, просим пользователя ввести ещё раз
+        if location_info:
+            # Если место найдено успешно, спрашиваем пользователя подтверждение
+            await message.reply(f"Это ваша точка маршрута? {location_info}", reply_markup=right_city_3)
+            await state.update_data(location_info=location_info.address)
+            await state.update_data(latitude=location_info.latitude)
+            await state.update_data(longitude=location_info.longitude)
+            await AddPoints.ConfirmPoint.set()
+        else:
+            # Если место не найдено, просим пользователя ввести ещё раз
+            await message.reply("Указанное местоположение не найдено. Пожалуйста, попробуйте ввести его ещё раз.")
+    except:
         await message.reply("Указанное местоположение не найдено. Пожалуйста, попробуйте ввести его ещё раз.")
 
 
@@ -836,7 +849,7 @@ async def dell_trip_points(callback_query: types.CallbackQuery):
 
     if not trip_points:
         await callback_query.message.edit_text("В этом путешествии пока нет точек маршрута.",
-                                               reply_markup=types.InlineKeyboardMarkup().add(
+                                               reply_markup=types.InlineKeyboardMarkup(row_width=1).add(
                                                    types.InlineKeyboardButton("Назад ↩️", callback_data="edit_trip")))
         return
 
@@ -848,7 +861,7 @@ async def dell_trip_points(callback_query: types.CallbackQuery):
 
     # Отправляем сообщение с информацией о точках маршрута и кнопками для удаления точек
     await callback_query.message.edit_text("Выберите точку маршрута для удаления:",
-                                           reply_markup=types.InlineKeyboardMarkup().add(*buttons).add(
+                                           reply_markup=types.InlineKeyboardMarkup(row_width=1).add(*buttons).add(
                                                types.InlineKeyboardButton("Назад ↩️", callback_data="edit_trip")))
 
     # Ответим на колбэк, чтобы убрать кружок ожидания
@@ -878,7 +891,7 @@ async def delete_trip_point(callback_query: types.CallbackQuery):
 @dp.callback_query_handler(lambda callback_query: callback_query.data == 'list_trips')
 async def list_trips(callback_query: types.CallbackQuery):
     locations = await get_user_trips_with_locations(callback_query.from_user.id)
-    await callback_query.message.edit_text(await format_trip_message(locations),reply_markup=back_to_menu_travels_keyboard)
+    await callback_query.message.edit_text(await format_trip_message(locations),reply_markup=back_to_menu_travels_keyboard, parse_mode="HTML")
 
 
 
@@ -887,9 +900,11 @@ async def list_trips(callback_query: types.CallbackQuery):
 @dp.callback_query_handler(lambda callback_query: callback_query.data == 'travel_notes')
 async def travel_notes(callback_query: types.CallbackQuery):
     message_text = (
-        "📝 **Выберите действие:**\n\n"
-        "➕ **Создать новую заметку**\n"
-        "📖 **Просмотреть заметки**"
+        "📝 <b>Выберите действие:</b>\n\n"
+        "➕ <b>Создать новую заметку</b>\n"
+        "         Начните записывать свои мысли и идеи\n\n"
+        "📖 <b>Просмотреть заметки и удалить при необходимости</b>\n"
+        "         Посмотрите свои существующие заметки и/или удалите ненужные"
     )
 
     keyboard_markup = types.InlineKeyboardMarkup(row_width=2)
@@ -899,7 +914,7 @@ async def travel_notes(callback_query: types.CallbackQuery):
     keyboard_markup.add(create_note_button, view_notes_button, back_button)
 
     await callback_query.message.edit_text(message_text, reply_markup=keyboard_markup,
-                                           parse_mode=types.ParseMode.MARKDOWN)
+                                           parse_mode=types.ParseMode.HTML)
 
 
 async def   travel_notes_mess(mess):
@@ -945,13 +960,13 @@ async def choose_travel_type(callback_query: types.CallbackQuery, state: FSMCont
     elif callback_query.data == 'friends_travel':
         trips_data_mes= await get_joined_trips_info(user_id)
         trip_data = await get_friends_trips_names(user_id)
-    keyboard_markup = types.InlineKeyboardMarkup()
+    keyboard_markup = types.InlineKeyboardMarkup(row_width=1)
     keyboard_markup.add(back_button)
     if not trip_data:
         await callback_query.message.edit_text("У вас пока нет путешествий 😔 Выберите путешествие друзей или сами создайте путешествие.",reply_markup=keyboard_markup)
         return
 
-    keyboard_markup = types.InlineKeyboardMarkup()
+    keyboard_markup = types.InlineKeyboardMarkup(row_width=1)
 
     for trip in trip_data:
         button = types.InlineKeyboardButton(trip['trip_name'], callback_data=f"select_trip_{trip['trip_id']}")
@@ -972,7 +987,7 @@ async def choose_trip(callback_query: types.CallbackQuery, state: FSMContext):
 
     # Предложим выбрать тип заметки (общая или приватная)
     instruction_text = "Выберите тип заметки:"
-    keyboard_markup = types.InlineKeyboardMarkup()
+    keyboard_markup = types.InlineKeyboardMarkup(row_width=1)
     public_button = types.InlineKeyboardButton("Общая 🌍", callback_data="note_public")
     private_button = types.InlineKeyboardButton("Приватная 🔒", callback_data="note_private")
     keyboard_markup.row(public_button, private_button)
@@ -1031,7 +1046,7 @@ async def save_trip_note(message: types.Message, state: FSMContext):
 async def view_notes(callback_query: types.CallbackQuery, state: FSMContext):
     back_button = types.InlineKeyboardButton("⬅️ Назад", callback_data="travel_notes")
     user_id = callback_query.from_user.id
-    keyboard_markup = types.InlineKeyboardMarkup()
+    keyboard_markup = types.InlineKeyboardMarkup(row_width=1)
 
 
     # Выбор между своими и путешествиями друзей
@@ -1050,7 +1065,7 @@ async def view_notes(callback_query: types.CallbackQuery, state: FSMContext):
 async def choose_notes_travel_type(callback_query: types.CallbackQuery, state: FSMContext):
     back_button = types.InlineKeyboardButton("⬅️ Назад", callback_data="view_notes")
     user_id = callback_query.from_user.id
-    keyboard_markup = types.InlineKeyboardMarkup()
+    keyboard_markup = types.InlineKeyboardMarkup(row_width=1)
 
     keyboard_markup.add(back_button)
     if callback_query.data == 'view_own_travel_notes':
@@ -1062,7 +1077,7 @@ async def choose_notes_travel_type(callback_query: types.CallbackQuery, state: F
         await callback_query.message.edit_text(
             "Ничего не найдено 😔 Поробуйте выбрать другой тип путешествия или сами создайте заметку.", reply_markup=keyboard_markup)
         return
-    keyboard_markup = types.InlineKeyboardMarkup()
+    keyboard_markup = types.InlineKeyboardMarkup(row_width=1)
     choose_trip_message = "Выберите путешествие для просмотра заметок:"
     for trip in trip_data:
         button = types.InlineKeyboardButton(trip['trip_name'], callback_data=f"view_trip_notes_{trip['trip_id']}")
@@ -1094,17 +1109,42 @@ async def view_trip_notes(callback_query: types.CallbackQuery, state: FSMContext
         await callback_query.message.edit_text("У выбранного путешествия пока нет заметок :(")
         await travel_notes_mess(callback_query.message)
         return
+    await callback_query.message.edit_text("📝 <b>Ваши заметки по этому путешествию:</b>", parse_mode="HTML")
 
+    # Отправляем заметки в виде фото, документов или текста
     for note in filtered_notes:
+        keyboard_markup = types.InlineKeyboardMarkup(row_width=1)
         if note['message_type'] == 'photo':
-            await bot.send_photo(callback_query.from_user.id, note['file_id'])
+            button = InlineKeyboardButton("Удалить ❌", callback_data=f"delite_trip_notes_{note['note_id']}")
+            keyboard_markup.add(button)
+            await bot.send_photo(callback_query.from_user.id, note['file_id'], reply_markup=keyboard_markup)
         elif note['message_type'] == 'document':
-            await bot.send_document(callback_query.from_user.id, note['file_id'])
+            button = InlineKeyboardButton("Удалить ❌", callback_data=f"delite_trip_notes_{note['note_id']}")
+            keyboard_markup.add(button)
+            await bot.send_document(callback_query.from_user.id, note['file_id'], reply_markup=keyboard_markup)
         else:
-            await callback_query.message.answer(note['file_id'])
+            button = InlineKeyboardButton("Удалить ❌", callback_data=f"delite_trip_notes_{note['note_id']}")
+            keyboard_markup.add(button)
+            await bot.send_message(callback_query.from_user.id, note['file_id'], reply_markup=keyboard_markup)
 
     await state.finish()  # Завершаем состояние FSM
     await travel_notes_mess(callback_query.message)
+
+@dp.callback_query_handler(lambda callback_query: callback_query.data.startswith('delite_trip_notes_'))
+async def delete_trip_note_handler(callback_query: CallbackQuery):
+    try:
+        # Получаем note_id из callback_data
+        note_id = int(callback_query.data.split('_')[-1])
+
+        # Удаляем заметку из базы данных по note_id
+        await delete_note_by_id(note_id)
+
+
+
+        await callback_query.message.edit_text("Заметка успешно удалена 🗑️")
+    except Exception as e:
+        # Если возникла ошибка, отправляем уведомление об этом
+        await bot.send_message(callback_query.from_user.id, f"Ошибка при удалении заметки: {e}")
 
 # Обработчик для кнопки "Путешествия с друзьями"---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 @dp.callback_query_handler(lambda callback_query: callback_query.data == 'travel_with_friends')
@@ -1162,7 +1202,7 @@ async def view_all_trips(callback_query: types.CallbackQuery):
     trips_text= await format_trip_message(joined_trips_info)
 
 
-    await callback_query.message.edit_text(trips_text, reply_markup=keyboard_markup)
+    await callback_query.message.edit_text(trips_text, reply_markup=keyboard_markup, parse_mode="HTML")
 @dp.callback_query_handler(lambda callback_query: callback_query.data == 'add_user_to_trip')
 async def add_user_to_trip(callback_query: types.CallbackQuery, state: FSMContext):
     user_id = callback_query.from_user.id
@@ -1201,7 +1241,7 @@ async def add_user_to_trip(callback_query: types.CallbackQuery, state: FSMContex
     keyboard_markup.add(*buttons)
     await callback_query.message.edit_text(
         trip_message,
-        reply_markup=keyboard_markup
+        reply_markup=keyboard_markup, parse_mode="HTML"
     )
 
 
@@ -1262,6 +1302,7 @@ async def process_username(message: types.Message, state: FSMContext):
                 print(f"Error sending notification to user {member_id}: {e}")
 
     await dp.bot.send_message(new_user_id, f"Вы добавлены в участники путешествия! 🎉")
+
     # Пользователь успешно добавлен в участники путешествия
     await message.reply(f"Пользователь {username} успешно добавлен в участники путешествия! 🎉")
     await state.finish()  # Завершаем состояние FSM
@@ -1444,13 +1485,13 @@ async def handle_location(message: types.Message, state: FSMContext):
 
     # Получаем координаты местоположения пользователя
     location = geolocator.geocode(message.text)
-    await state.update_data(latitude=location.latitude, longitude=location.longitude)
+
     if location:
         # Если местоположение найдено, создайте кнопки для подтверждения
-        confirmation_keyboard = InlineKeyboardMarkup()
+        confirmation_keyboard = InlineKeyboardMarkup(row_width=1)
         confirmation_keyboard.row(InlineKeyboardButton("Всё верно", callback_data="confirm_location"),
                                   InlineKeyboardButton("Неверно", callback_data="retry_location"))
-
+        await state.update_data(latitude=location.latitude, longitude=location.longitude)
         # Отправьте пользователю сообщение с предполагаемым местоположением и кнопками для подтверждения
         await message.answer(f"По вашему запросу найдено место:\n{location.address}",
                              reply_markup=confirmation_keyboard)
@@ -1569,7 +1610,7 @@ async def weather_forecast_callback(callback_query: types.CallbackQuery):
 async def travel_to_check_weather(callback_query: types.CallbackQuery, state: FSMContext):
     back_button = types.InlineKeyboardButton("⬅️ Назад", callback_data="weather_forecast")
     user_id = callback_query.from_user.id
-    keyboard_markup = types.InlineKeyboardMarkup()
+    keyboard_markup = types.InlineKeyboardMarkup(row_width=1)
     keyboard_markup.add(back_button)
 
     if callback_query.data == 'my_travels':
@@ -1584,7 +1625,7 @@ async def travel_to_check_weather(callback_query: types.CallbackQuery, state: FS
             "Ничего не найдено 😔 Попробуйте выбрать другой тип путешествия или создайте новое.",
             reply_markup=keyboard_markup)
         return
-    keyboard_markup = types.InlineKeyboardMarkup()
+    keyboard_markup = types.InlineKeyboardMarkup(row_width=1)
 
     choose_trip_message = message_text
     for trip in trip_data:
@@ -1693,7 +1734,26 @@ async def view_weather(callback_query: types.CallbackQuery, state: FSMContext):
 # Обработчик для кнопки "Подбор билетов"--------------------------------------------------------------------------------------------------------------------------------------------
 @dp.callback_query_handler(lambda callback_query: callback_query.data == 'ticket_booking')
 async def ticket_booking_handler(callback_query: CallbackQuery):
-    await callback_query.answer()
+    hotel_choice_menu = types.InlineKeyboardMarkup(row_width=1)
+    back_button = types.InlineKeyboardButton(text="Назад↩️", callback_data="second_page_next")
+    hotel_choice_menu.add(back_button)
+    await callback_query.message.edit_text("Функционал ещё в разработке",reply_markup=hotel_choice_menu)
+    # Здесь можно добавить логику для подбора билетов и отправки информации о них пользователю
+
+@dp.callback_query_handler(lambda callback_query: callback_query.data == 'find_travel_buddies')
+async def ticket_booking_handler(callback_query: CallbackQuery):
+    hotel_choice_menu = types.InlineKeyboardMarkup(row_width=1)
+    back_button = types.InlineKeyboardButton(text="Назад↩️", callback_data="second_page_next")
+    hotel_choice_menu.add(back_button)
+    await callback_query.message.edit_text("Функционал ещё в разработке",reply_markup=hotel_choice_menu)
+    # Здесь можно добавить логику для подбора билетов и отправки информации о них пользователю
+
+@dp.callback_query_handler(lambda callback_query: callback_query.data == 'expenses_management')
+async def ticket_booking_handler(callback_query: CallbackQuery):
+    hotel_choice_menu = types.InlineKeyboardMarkup(row_width=1)
+    back_button = types.InlineKeyboardButton(text="Назад↩️", callback_data="second_page_next")
+    hotel_choice_menu.add(back_button)
+    await callback_query.message.edit_text("Функционал ещё в разработке",reply_markup=hotel_choice_menu)
     # Здесь можно добавить логику для подбора билетов и отправки информации о них пользователю
 
 # Обработчик для кнопки "Подбор отелей"--------------------------------------------------------------------------------------------------------------------------------------------
@@ -1721,7 +1781,7 @@ async def hotel_selection_callback(callback_query: types.CallbackQuery):
 async def hotel_selection_handler(callback_query: types.CallbackQuery, state: FSMContext):
     back_button = types.InlineKeyboardButton("⬅️ Назад", callback_data="hotel_selection")
     user_id = callback_query.from_user.id
-    keyboard_markup = types.InlineKeyboardMarkup()
+    keyboard_markup = types.InlineKeyboardMarkup(row_width=1)
     keyboard_markup.add(back_button)
 
     if callback_query.data == 'my_hotels':
@@ -1733,11 +1793,11 @@ async def hotel_selection_handler(callback_query: types.CallbackQuery, state: FS
 
     if not hotel_data:
         await callback_query.message.edit_text(
-            "Ничего не найдено 😔 Попробуйте выбрать другой тип отеля или добавить новый.",
+            "Ничего не найдено 😔 Попробуйте выбрать другое путешествие или создайте новое.",
             reply_markup=keyboard_markup)
         return
 
-    keyboard_markup = types.InlineKeyboardMarkup()
+    keyboard_markup = types.InlineKeyboardMarkup(row_width=1)
     choose_hotel_message = message_text
 
     for hotel in hotel_data:
@@ -1841,21 +1901,372 @@ async def send_hotel_information(callback_query: types.CallbackQuery, state: FSM
             reply_markup=location_choice_menu
         )
 
-
 # Обработчик для кнопки "Рекомендации по достопримечательностям"--------------------------------------------------------------------------------------------------------------------------------------------
-@dp.callback_query_handler(lambda callback_query: callback_query.data == 'sightseeing_recommendations')
-async def sightseeing_recommendations_handler(callback_query: CallbackQuery):
-    await callback_query.answer()
-    # Здесь можно добавить логику для предоставления рекомендаций по достопримечательностям и отправки информации о них пользователю
+
 
 
 # Обработчик для кнопки "Выбор кафе и ресторанов"---------------------------------------------------------------------------------------------------------------
+# Обработчик выбора типа кафе
 @dp.callback_query_handler(lambda callback_query: callback_query.data == 'restaurant_selection')
-async def restaurant_selection_handler(callback_query: CallbackQuery):
-    await callback_query.answer()
+async def cafe_selection_callback(callback_query: types.CallbackQuery):
+    # Создаем клавиатуру для выбора между кафе в регионе и кафе в других регионах
+    cafe_choice_menu = types.InlineKeyboardMarkup(row_width=1)
 
-    # Здесь можно добавить логику для выбора кафе и ресторанов и отправки информации о них пользователю
+    # Добавляем кнопку "Кафе в регионе" с соответствующим смайликом
+    local_cafe_button = types.InlineKeyboardButton(text="Мои путешествия 👤", callback_data="local_cafe")
+    cafe_choice_menu.add(local_cafe_button)
+
+    # Добавляем кнопку "Кафе в других регионах" с соответствующим смайликом
+    other_region_cafe_button = types.InlineKeyboardButton(text="Путешествия друзей 👫",
+                                                          callback_data="other_region_cafe")
+    cafe_choice_menu.add(other_region_cafe_button)
+
+    # Добавляем кнопку "Назад" для возможности вернуться к предыдущему меню
+    back_button = types.InlineKeyboardButton(text="Назад↩️", callback_data="next_page")
+    cafe_choice_menu.add(back_button)
+
+    # Отправляем сообщение с клавиатурой выбора между кафе в регионе и кафе в других регионах
+    await callback_query.message.edit_text("Выберите, какие путешествия вас интересуют для просмотра кафе:", reply_markup=cafe_choice_menu)
+
+
+
+@dp.callback_query_handler(lambda callback_query: callback_query.data in ['local_cafe', 'other_region_cafe'])
+async def cafe_region_selection_handler(callback_query: types.CallbackQuery, state: FSMContext):
+    back_button = types.InlineKeyboardButton("⬅️ Назад", callback_data="restaurant_selection")
+    user_id = callback_query.from_user.id
+    keyboard_markup = types.InlineKeyboardMarkup(row_width=1)
+    keyboard_markup.add(back_button)
+
+    if callback_query.data == 'local_cafe':
+        cafe_data = await get_user_trip_names_format(user_id)
+        message_text = "Выберите одно из ваших путешествий:"
+    elif callback_query.data == 'other_region_cafe':
+        cafe_data = await get_friends_trips_names(user_id)
+        message_text = "Выберите одно из путешествий друзей:"
+
+    if not cafe_data:
+        await callback_query.message.edit_text(
+            "Ничего не найдено 😔 Попробуйте выбрать другое путешествие или создайте новое.",
+            reply_markup=keyboard_markup)
+        return
+
+    keyboard_markup = types.InlineKeyboardMarkup(row_width=1)
+    choose_cafe_message = message_text
+
+    for cafe in cafe_data:
+        button = types.InlineKeyboardButton(cafe['trip_name'], callback_data=f"view_cafe_{cafe['trip_id']}")
+        keyboard_markup.add(button)
+
+    await state.update_data(cafe_data=cafe_data)  # Сохраняем информацию о кафе в состоянии FSM
+    keyboard_markup.add(back_button)
+    await callback_query.message.edit_text(choose_cafe_message, reply_markup=keyboard_markup)
+
+
+# Обработчик выбора конкретного путешествия для кафе
+@dp.callback_query_handler(lambda callback_query: callback_query.data.startswith('view_cafe_'))
+async def choose_location_for_cafe(callback_query: types.CallbackQuery, state: FSMContext):
+    # Извлекаем trip_id из callback_data
+    trip_id = int(callback_query.data.split('_')[-1])
+
+    # Получаем список локаций для выбранного путешествия
+    cafe_locations = await get_trip_points(trip_id)
+
+    # Создаем кнопку "Назад"
+    back_button = types.InlineKeyboardButton("⬅️ Назад", callback_data="restaurant_selection")
+
+    # Создаем клавиатуру для выбора локации
+    location_choice_menu = types.InlineKeyboardMarkup(row_width=1)
+    location_choice_menu.add(back_button)
+
+    if not cafe_locations:
+        await callback_query.message.edit_text(
+            "В этом путешествии нет точек маршрута. Пожалуйста, добавьте их и попробуйте снова.",
+            reply_markup=location_choice_menu)
+        return
+    location_choice_menu = types.InlineKeyboardMarkup(row_width=1)
+    # Добавляем кнопки для каждой доступной локации
+    for location in cafe_locations:
+        button_text = f"{location['location_name']} ({location['visit_date']} - {location['visit_end']})"
+        button = types.InlineKeyboardButton(button_text,
+                                            callback_data=f"cafe-choose-location_{trip_id}_{location['location_id']}")
+        location_choice_menu.add(button)
+
+    # Добавляем кнопку "Назад" в конце
+    location_choice_menu.add(back_button)
+
+    # Отправляем сообщение с просьбой выбрать локацию
+    await callback_query.message.edit_text("Выберите локацию для просмотра информации о кафе рядом с ней:",
+                                           reply_markup=location_choice_menu)
+@dp.callback_query_handler(lambda callback_query: callback_query.data.startswith('cafe-choose-location_'))
+async def send_cafe_information(callback_query: types.CallbackQuery, state: FSMContext):
+    # Извлекаем идентификатор путешествия и локации из callback_data
+    _, trip_id, location_id = callback_query.data.split('_')
+    trip_id = int(trip_id)
+    location_id = int(location_id)
+
+    # Создаем кнопку "Назад"
+    back_button = types.InlineKeyboardButton("⬅️ Назад", callback_data="restaurant_selection")
+    location_choice_menu = types.InlineKeyboardMarkup(row_width=1)
+    location_choice_menu.add(back_button)
+
+    # Получаем данные о выбранной локации из базы данных
+    location_data = await get_location_data(trip_id, location_id)
+    if not location_data:
+        await callback_query.message.edit_text("Локация не найдена.", reply_markup=location_choice_menu)
+        return
+
+    # Извлекаем данные о местоположении из результата запроса
+    location_name = location_data['location_name']
+    latitude = location_data['latitude']
+    longitude = location_data['longitude']
+
+    url = "https://api.foursquare.com/v3/places/search"
+    params = {
+        "ll": f"{latitude},{longitude}",
+        "categories": "13000",
+        "sort": "rating",
+        "fields": "name,location,description,price,hours",
+        'radius': 12000
+    }
+
+    headers = {
+        "accept": "application/json",
+        "Authorization": "fsq3Q60MwP12TYiWttv25APgEc+Qedh/UiYGXRgNGrAZE5w=",
+        "Accept-Language": "ru"
+    }
+
+    response = requests.get(url, params=params, headers=headers)
+
+    if response.status_code == 200:
+        data = response.json()
+        places = data['results']
+        if places:
+            places_message = "🌟 <b>Вот несколько ближайших кафе, которые могут вас заинтересовать:</b> 🌟\n\n"
+            for place in places:
+                place_name = f"<b>{place['name']}</b>"
+                place_address = place['location'].get('formatted_address', '').strip()
+                if not place_address:
+                    place_address = '-'
+                description = place.get('description', '-')
+                price = place.get('price', '-')
+                price_string = get_price_string(price)  # Получаем строку для отображения цены
+                hours_info = place.get('hours', {}).get('display', '')  # Получаем строку с графиком работы
+                if hours_info:
+                    hours_string = hours_info.split('; ')[0]  # Извлекаем только часть с графиком работы
+                else:
+                    hours_string = 'График работы неизвестен'
+                places_message += f"▫️ <u>Кафе:</u> {place_name}\n▫️ <b>Адрес:</b> {place_address}\n▫️ <i>Описание:</i> {description}\n▫️ <b>Цена:</b> {price_string}\n▫️ <b>График работы:</b> {hours_string}\n\n"
+
+            await callback_query.message.edit_text(places_message, reply_markup=location_choice_menu, parse_mode="HTML")
+        else:
+            await callback_query.message.edit_text(
+                "К сожалению, в радиусе 12 километров не найдено ни одного кафе. 😔",
+                reply_markup=location_choice_menu
+            )
+    else:
+        await callback_query.message.edit_text(
+            "Не удалось получить информацию о кафе. Попробуйте позже. 😔",
+            reply_markup=location_choice_menu
+        )
+
+def get_price_string(price):
+    if price == 1:
+        return 'Дешево'
+    elif price == 2:
+        return 'Средне'
+    elif price == 3:
+        return 'Дорого'
+    elif price == 4:
+        return 'Очень дорого'
+    else:
+        return '-'
+
+
+# Обработчик для кнопки "Подбор отеля"
+@dp.callback_query_handler(lambda callback_query: callback_query.data == 'sightseeing_recommendations')
+async def hotel_selection_callback(callback_query: CallbackQuery):
+    # Создаем клавиатуру для выбора между отелями в регионе и отелями в других регионах
+    hotel_choice_menu = types.InlineKeyboardMarkup(row_width=1)
+
+
+    # Добавляем кнопку "Отели в регионе" с соответствующим смайликом
+    local_hotel_button = types.InlineKeyboardButton(text="Мои путешествия 👤", callback_data="your_local_hotel")
+    hotel_choice_menu.add(local_hotel_button)
+
+    # Добавляем кнопку "Отели в других регионах" с соответствующим смайликом
+    other_region_hotel_button = types.InlineKeyboardButton(text="Путешествия друзей 👫", callback_data="another_region_hotel")
+    hotel_choice_menu.add(other_region_hotel_button)
+
+    # Добавляем кнопку "Назад" для возможности вернуться к предыдущему меню
+    back_button = types.InlineKeyboardButton(text="Назад↩️", callback_data="second_page_next")
+    hotel_choice_menu.add(back_button)
+
+    # Отправляем сообщение с клавиатурой выбора между отелями в регионе и отелями в других регионах
+    await callback_query.message.edit_text("Выберите, какие путешествия вас интересуют для просмотра отелей:", reply_markup=hotel_choice_menu)
+
+# Обработчик выбора региона для просмотра отелей
+@dp.callback_query_handler(lambda callback_query: callback_query.data in ['your_local_hotel', 'another_region_hotel'])
+async def hotel_region_selection_handler(callback_query: CallbackQuery, state: FSMContext):
+    # Создаем кнопку "Назад"
+    back_button = types.InlineKeyboardButton("⬅️ Назад", callback_data="sightseeing_recommendations")
+    user_id = callback_query.from_user.id
+    keyboard_markup = types.InlineKeyboardMarkup(row_width=1)
+    keyboard_markup.add(back_button)
+
+
+    if callback_query.data == 'your_local_hotel':
+        # Здесь должен быть код для получения данных об отелях в регионе пользователя
+        hotel_data = await get_user_trip_names_format(user_id)
+        message_text = "Выберите одино из ваших путешевствий:"
+    elif callback_query.data == 'other_region_hotel':
+        # Здесь должен быть код для получения данных об отелях в других регионах
+        hotel_data = await get_friends_trips_names(user_id)
+        message_text = "Выберите один из путешевствий ваших друзей:"
+
+    if not hotel_data:
+        await callback_query.message.edit_text(
+            "Ничего не найдено 😔 Попробуйте выбрать другое путешествие или создайте новое.",
+            reply_markup=keyboard_markup)
+        return
+
+    keyboard_markup = types.InlineKeyboardMarkup(row_width=1)
+    choose_hotel_message = message_text
+
+    # Создаем кнопки для каждого отеля
+    for hotel in hotel_data:
+        button = types.InlineKeyboardButton(hotel['trip_name'], callback_data=f"vview_hotel_{hotel['trip_id']}")
+        keyboard_markup.add(button)
+
+    await state.update_data(hotel_data=hotel_data)  # Сохраняем информацию об отелях в состоянии FSM
+    keyboard_markup.add(back_button)
+    await callback_query.message.edit_text(choose_hotel_message, reply_markup=keyboard_markup)
+
+# Обработчик выбора конкретного отеля
+# Обработчик выбора конкретного отеля
+@dp.callback_query_handler(lambda callback_query: callback_query.data.startswith('vview_hotel_'))
+async def choose_hotel_callback(callback_query: CallbackQuery, state: FSMContext):
+    # Извлекаем id отеля из callback_data
+    hotel_id = int(callback_query.data.split('_')[-1])
+
+    # Получаем список локаций для выбранного путешествия
+    hotel_locations = await get_trip_points(hotel_id)
+
+    # Создаем кнопку "Назад"
+    back_button = types.InlineKeyboardButton("⬅️ Назад", callback_data="sightseeing_recommendations")
+
+    # Создаем клавиатуру для выбора локации
+    location_choice_menu = types.InlineKeyboardMarkup(row_width=1)
+    location_choice_menu.add(back_button)
+
+    if not hotel_locations:
+        await callback_query.message.edit_text(
+            "В этом путешествии нет точек маршрута. Пожалуйста, добавьте их и попробуйте снова.",
+            reply_markup=location_choice_menu)
+        return
+    location_choice_menu = types.InlineKeyboardMarkup(row_width=1)
+    # Добавляем кнопки для каждой доступной локации
+    for location in hotel_locations:
+        button_text = f"{location['location_name']} ({location['visit_date']} - {location['visit_end']})"
+        button = types.InlineKeyboardButton(button_text,
+                                            callback_data=f"hhotel-choose-location_{hotel_id}_{location['location_id']}")
+        location_choice_menu.add(button)
+
+    # Добавляем кнопку "Назад" в конце
+    location_choice_menu.add(back_button)
+
+    # Отправляем сообщение с просьбой выбрать локацию
+    await callback_query.message.edit_text("Выберите локацию для просмотра информации о путешествии и отеле рядом с ней:",
+                                           reply_markup=location_choice_menu)
+# Обработчик выбора конкретной локации для просмотра информации о путешествии и отеле рядом с ней
+
+
+
+@dp.callback_query_handler(lambda callback_query: callback_query.data.startswith('hhotel-choose-location_'))
+async def choose_hotel_location_callback(callback_query: types.CallbackQuery, state: FSMContext):
+    # Извлекаем id отеля и локации из callback_data
+    _, hotel_id, location_id = callback_query.data.split('_')
+
+    back_button = types.InlineKeyboardButton("⬅️ Назад", callback_data="sightseeing_recommendations")
+
+    # Создаем клавиатуру для выбора локации
+    location_choice_menu = types.InlineKeyboardMarkup(row_width=1)
+    location_choice_menu.add(back_button)
+
+    # Получаем информацию о выбранной локации
+    location_data = await get_location_data(int(hotel_id), int(location_id))
+
+    if location_data:
+        latitude = location_data['latitude']
+        longitude = location_data['longitude']
+
+        # Отправляем запрос к Amadeus API, чтобы получить отели рядом с выбранной локацией
+        hotels_nearby = await get_hotels_nearby(latitude, longitude)
+        if hotels_nearby:
+            # Формируем сообщение с информацией о найденных отелях
+            message_text = "Отели рядом с выбранной локацией:\n\n"
+            for hotel in hotels_nearby:
+                message_text += f"{hotel['name']}\n"
+
+            # Отправляем сообщение с информацией о найденных отелях
+            await callback_query.message.edit_text(message_text,reply_markup=location_choice_menu)
+        else:
+            await callback_query.message.edit_text("Информация о выбранной локации не найдена.",
+                                                   reply_markup=location_choice_menu)
+
+    else:
+        await callback_query.message.edit_text("Информация о выбранной локации не найдена.",reply_markup=location_choice_menu)
+async def get_hotels_nearby(latitude: float, longitude: float, client_id="XcYpiXvHezfgoKessoiYCe0NRA7dVYp1", client_secret="hVmv5mdWJA9VcCaY"):
+    # Указываем параметры запроса для поиска отелей по координатам
+    params = {
+        'latitude': latitude,
+        'longitude': longitude,
+        'radius': 1,  # Максимальное расстояние от координат в километрах
+        'radiusUnit': 'KM',  # Единица измерения расстояния
+        'hotelSource': 'ALL',  # Источник отелей
+    }
+
+    # URL API Amadeus
+    api_url = 'https://test.api.amadeus.com/v1/reference-data/locations/hotels/by-geocode'
+
+    # Получение токена доступа
+    token_url = 'https://test.api.amadeus.com/v1/security/oauth2/token'
+    token_params = {
+        'grant_type': 'client_credentials',
+        'client_id': client_id,
+        'client_secret': client_secret
+    }
+    response = requests.post(token_url, data=token_params)
+    if response.status_code != 200:
+        # Если запрос токена завершился с ошибкой, возвращаем None
+        return None
+
+    # Извлекаем токен доступа из ответа
+    access_token = response.json().get('access_token')
+
+    # Отправляем GET запрос с заголовком авторизации
+    response = requests.get(api_url, params=params, headers={'Authorization': f'Bearer {access_token}'})
+
+    # Обработка ответа
+    if response.status_code == 200:
+        data = response.json()
+        # Извлекаем информацию о найденных отелях из ответа
+        hotels_nearby = data.get('data', [])
+        return hotels_nearby
+    else:
+        # Если произошла ошибка при выполнении запроса, возвращаем None
+        return None
+
+
 if __name__ == '__main__':
     executor.start_polling(dp,
                            skip_updates=True,
                            on_startup=on_startup)
+
+
+
+# if __name__ == '__main__':
+#     while True:  # Бесконечный цикл для повторного запуска бота при ошибке
+#         try:
+#             executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+#         except Exception as e:
+#             logging.exception("Exception occurred, restarting the bot...")
