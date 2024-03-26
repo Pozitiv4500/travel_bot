@@ -403,3 +403,32 @@ async def delete_note_by_id(note_id: int):
     except Exception as e:
         # Обработка ошибок, если они возникнут при выполнении SQL-запроса
         print(f"Error deleting note with ID {note_id}: {e}")
+
+
+async def find_matching_travelers(user_id, user_age, user_city):
+    # Выполнение запроса к базе данных для поиска путешественников
+    query = """
+        SELECT user_id, username, age, home_name, bio
+        FROM users
+        WHERE age BETWEEN $1 AND $2
+        
+        AND user_id != $3
+    """
+    # Выполнение запроса к базе данных
+    matching_travelers = await conn.fetch(query, user_age - 5, user_age + 5, user_id)
+    print(matching_travelers)
+    # Преобразование результатов запроса в список словарей
+    travelers = []
+    for row in matching_travelers:
+        traveler = {
+            'user_id': row['user_id'],
+            'username': row['username'],
+            'age': row['age'],
+            'home_name': row['home_name'],
+            'bio': row['bio']
+        }
+        travelers.append(traveler)
+
+    return travelers
+
+

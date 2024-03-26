@@ -1,6 +1,6 @@
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import requests
 from aiogram import Bot, Dispatcher, executor, types
@@ -21,7 +21,7 @@ from models import db_start, create_profile, check_user_exists, edit_profile, cr
     check_trip_existence, get_user_trips_with_locations, format_trip_message, get_user_data, edit_trip_mod, \
     add_trip_point, get_user_trip_names, get_trip_points, delete_trip_point_by_id, delete_trip_by_id, \
     add_friend_to_trip, get_joined_trips_info, get_friends_trips_names, get_user_trip_names_format, get_invited_users, \
-    save_trip_note_to_db, get_trip_notes, get_location_data, delete_note_by_id
+    save_trip_note_to_db, get_trip_notes, get_location_data, delete_note_by_id, find_matching_travelers
 
 from statesform import Registration, ChangeUser, MakeTravel, EditTravel, AddPoints, AddUserToTrip, NoteCreation, \
     WeatherForecastState, Road_to_Trip
@@ -1740,13 +1740,48 @@ async def ticket_booking_handler(callback_query: CallbackQuery):
     await callback_query.message.edit_text("Функционал ещё в разработке",reply_markup=hotel_choice_menu)
     # Здесь можно добавить логику для подбора билетов и отправки информации о них пользователю
 
+
 @dp.callback_query_handler(lambda callback_query: callback_query.data == 'find_travel_buddies')
-async def ticket_booking_handler(callback_query: CallbackQuery):
+async def find_travel_buddies_handler(callback_query: CallbackQuery):
+    # Отправляем сообщение о том, что функционал находится в разработке
+
+
+    # Получаем информацию о текущем пользователе
+    user_id = callback_query.from_user.id
+    user_data = await get_user_data(user_id)
+
+    # Создаем клавиатуру для возврата назад
     hotel_choice_menu = types.InlineKeyboardMarkup(row_width=1)
     back_button = types.InlineKeyboardButton(text="Назад↩️", callback_data="second_page_next")
     hotel_choice_menu.add(back_button)
-    await callback_query.message.edit_text("Функционал ещё в разработке",reply_markup=hotel_choice_menu)
-    # Здесь можно добавить логику для подбора билетов и отправки информации о них пользователю
+
+    if user_data:
+        # Определяем возраст текущего пользователя
+        user_age = user_data.get('age')
+        # Определяем город текущего пользователя
+        user_city = user_data.get('home_name')
+        # Определяем ник текущего пользователя
+        user_username = user_data.get('username')
+
+        # Выполняем запрос к базе данных для поиска путешественников
+        travelers = await find_matching_travelers(user_id,user_age, user_city)
+
+        if travelers:
+            # Формируем сообщение с информацией о найденных путешественниках
+            message_text = "Найдены подходящие вам путешественники:\n\n"
+            for traveler in travelers:
+                message_text += f"👤 Логин: @{traveler['username']}\n"
+                message_text += f"📅 Возраст: {traveler['age']}\n"
+                message_text += f"🌍 Город: {traveler['home_name']}\n"
+                message_text += f"ℹ️ Интересы: {(traveler['bio'])}\n\n"
+
+            # Отправляем сообщение с информацией о найденных путешественниках
+            await callback_query.message.edit_text(message_text, reply_markup=hotel_choice_menu)
+        else:
+            await callback_query.message.edit_text("Подходящие путешественники не найдены.", reply_markup=hotel_choice_menu)
+    else:
+        await callback_query.message.edit_text("Информация о вас не найдена. Пожалуйста, заполните профиль.", reply_markup=hotel_choice_menu)
+
 
 @dp.callback_query_handler(lambda callback_query: callback_query.data == 'expenses_management')
 async def ticket_booking_handler(callback_query: CallbackQuery):
