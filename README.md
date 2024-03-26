@@ -71,6 +71,15 @@ https://github.com/Central-University-IT-prod/backend-Pozitiv4500/assets/1236301
 
 https://github.com/Central-University-IT-prod/backend-Pozitiv4500/assets/123630113/de4b49de-b145-41cf-8c63-5a54d170952f
 
+9. **Подбор отелей 🏨:**
+
+https://github.com/Central-University-IT-prod/backend-Pozitiv4500/assets/123630113/65c2ddd2-8309-49e6-a61d-1fa51e0517d1
+
+10. **Поиск попутчиков 👫:**
+
+https://github.com/Central-University-IT-prod/backend-Pozitiv4500/assets/123630113/c3326311-aba5-4556-a736-28dbadda7c95
+
+
 
 ### Описание внешних интеграций
 
